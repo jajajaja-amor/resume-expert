@@ -56,4 +56,8 @@ export interface CozeStatusResponse {
   workflowConfigured: boolean;
   mode: "coze" | "demo";
   reason?: string;
+  feishu?: {
+    configured: boolean;
+    docType?: string;
+  };
 }

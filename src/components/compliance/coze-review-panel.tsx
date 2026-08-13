@@ -25,10 +25,11 @@ const MAX_FILE_SIZE = 20 * 1024 * 1024;
 function statusBadgeText(status: CozeStatusResponse | null, loading: boolean): string {
   if (loading || !status) return "正在检测扣子配置…";
   if (status.reason === "status_unavailable") return "状态接口异常 · 请刷新后重试";
-  if (status.configured) return "扣子已配置（服务端）";
-  if (status.reason === "missing_pat") return "未检测到扣子密钥 · 可先用演示结果";
-  if (status.reason === "forced_mock") return "已强制演示模式";
-  return "未检测到扣子密钥 · 可先用演示结果";
+  const feishu = status.feishu?.configured ? " · 飞书已配置" : "";
+  if (status.configured) return `扣子已配置（服务端）${feishu}`;
+  if (status.reason === "missing_pat") return `未检测到扣子密钥 · 可先用演示结果${feishu}`;
+  if (status.reason === "forced_mock") return `已强制演示模式${feishu}`;
+  return `未检测到扣子密钥 · 可先用演示结果${feishu}`;
 }
 
 export function CozeReviewPanel({
@@ -316,11 +317,10 @@ export function CozeReviewPanel({
               <p>{error}</p>
               {needsAuth ? (
                 <div className="space-y-1 text-red-700">
-                  <p>提示：API 调用仍被飞书云文档节点中断。</p>
+                  <p>提示：扣子内部的「飞书云文档」插件仍未授权完成（API 被中断）。</p>
                   <p>
-                    请到扣子工作流里打开「飞书云文档」节点，授权模式选
-                    <strong>共享授权</strong>
-                    （不要只用试运行时的单独授权），用开发者账号完成授权后再重试。
+                    可到扣子飞书节点改用<strong>共享授权</strong>后重试；也可点「查看演示结果」——
+                    系统会用已配置的飞书应用直接生成报告表格链接。
                   </p>
                 </div>
               ) : null}

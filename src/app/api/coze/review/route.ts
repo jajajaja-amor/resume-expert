@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { CozeWorkflowError, runCozeContractReview } from "@/services/coze/client";
 import { buildDemoCozeReview } from "@/services/coze/mock";
+import { maybeAttachFeishuReport } from "@/services/feishu/client";
 import type { CozeReviewRequest } from "@/types/coze-review";
 
 export const runtime = "nodejs";
@@ -68,9 +69,12 @@ export async function POST(request: Request) {
     }
 
     const { result, mode } = await runCozeContractReview(body);
-    return NextResponse.json({ result, mode });
+    const withFeishu = await maybeAttachFeishuReport(result);
+    return NextResponse.json({ result: withFeishu, mode });
   } catch (error) {
     if (error instanceof CozeWorkflowError) {
+      // If Coze is blocked on its own Feishu plugin OAuth, still allow client to
+      // fall back to demo + our Feishu app report via PUT /api/coze/review.
       return NextResponse.json(
         {
           error: error.message,
@@ -79,6 +83,7 @@ export async function POST(request: Request) {
           needsAuth: error.needsAuth,
           debugUrl: error.debugUrl,
           authUrl: error.authUrl,
+          feishuFallbackAvailable: true,
         },
         { status: 502 }
       );
@@ -100,7 +105,8 @@ export async function PUT(request: Request) {
       additionalRequirements: body.additionalRequirements || "",
       contractText: body.contractText || "",
     });
-    return NextResponse.json({ result, mode: "demo" as const });
+    const withFeishu = await maybeAttachFeishuReport(result);
+    return NextResponse.json({ result: withFeishu, mode: "demo" as const });
   } catch (error) {
     const message = error instanceof Error ? error.message : "演示结果生成失败";
     return NextResponse.json({ error: message }, { status: 500 });
