@@ -53,9 +53,9 @@ npm run dev
 - 参数冲突、单位归一化、待确认项
 - 合规结果覆盖 PASS / FAIL / REVIEW / MISSING / NOT_APPLICABLE
 
-## 真实 Agent 接入
+## 真实 Agent / 扣子接入
 
-密钥只能放在服务端环境变量，不要写入前端或仓库。
+密钥只能放在服务端环境变量或 Secrets，不要写入前端或仓库。
 
 ```bash
 cp .env.example .env.local
@@ -65,16 +65,20 @@ cp .env.example .env.local
 LLM_API_KEY=sk-xxx
 LLM_BASE_URL=https://api.openai.com/v1
 LLM_MODEL=gpt-4o-mini
-# USE_MOCK_AI=true
+
+# 扣子工作流（合同合规审查，服务端调用）
+COZE_PAT=your_pat_here
+COZE_WORKFLOW_ID=7673528525253820442
+COZE_API_BASE=https://api.coze.cn
 ```
 
-替换点：
+相关接口：
 
-- `src/services/agents/compareAgent.server.ts`
-- `src/services/agents/complianceAgent.server.ts`
-- API Routes：`/api/compare/analyze`、`/api/compliance/check`
+- `POST /api/coze/review`：上传合同并调用扣子工作流
+- `GET /api/coze/status`：仅返回是否已配置（不暴露密钥）
+- `/api/compare/analyze`、`/api/compliance/check`：产品比选 / 规范核查
 
-当前未配置 Key 时自动使用 Mock Agent，结构化输入输出与未来真实 Agent 保持一致。
+未配置密钥时自动使用演示结果，并标注「当前为演示结果」。若扣子工作流因飞书插件授权中断，页面会显示明确错误并支持重试。
 
 ## 项目结构
 

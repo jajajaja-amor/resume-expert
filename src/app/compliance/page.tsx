@@ -16,6 +16,7 @@ import {
   getDemoSpecDocuments,
   runComplianceAnalysis,
 } from "@/services/agents/complianceAgent";
+import { CozeReviewPanel } from "@/components/compliance/coze-review-panel";
 import { useWorkspaceStore } from "@/store/workspace-store";
 import {
   reportToHtml,
@@ -240,16 +241,19 @@ export default function CompliancePage() {
 
   if (!selectionResult) {
     return (
-      <div className="panel max-w-2xl p-6 animate-fade-up">
-        <h1 className="font-display text-3xl font-semibold">AI 产品合规审核</h1>
-        <p className="mt-3 text-sm text-[var(--ink-muted)]">
-          当前暂无已确认的产品选型结果，请先完成产品比选。
-        </p>
-        <Button asChild className="mt-5">
-          <Link href="/compare">
-            前往产品比选 <ArrowRight className="h-4 w-4" />
-          </Link>
-        </Button>
+      <div className="space-y-8">
+        <section className="panel max-w-3xl p-6 animate-fade-up">
+          <h1 className="font-display text-3xl font-semibold">AI 产品合规审核</h1>
+          <p className="mt-3 text-sm text-[var(--ink-muted)]">
+            当前暂无已确认的产品选型结果。你仍可先使用下方「扣子工作流 · 合同合规审查」；完整产品规范核查请先完成产品比选。
+          </p>
+          <Button asChild className="mt-5">
+            <Link href="/compare">
+              前往产品比选 <ArrowRight className="h-4 w-4" />
+            </Link>
+          </Button>
+        </section>
+        <CozeReviewPanel />
       </div>
     );
   }
@@ -261,7 +265,7 @@ export default function CompliancePage() {
           <div>
             <h1 className="font-display text-3xl font-semibold">AI 产品合规审核</h1>
             <p className="mt-2 max-w-2xl text-sm text-[var(--ink-muted)] md:text-base">
-              基于已确认产品和项目规范，逐项检查产品是否满足海外工程项目要求。
+              基于已确认产品和项目规范，逐项检查产品是否满足海外工程项目要求；合同文本可提交至扣子工作流审查。
             </p>
           </div>
           <Button variant="outline" size="sm" onClick={resetCompliance}>
@@ -270,6 +274,11 @@ export default function CompliancePage() {
           </Button>
         </div>
       </section>
+
+      <CozeReviewPanel
+        defaultFocus="付款条款、违约责任、防火/认证合规、交付资料完整性"
+        defaultExtra={`关联选型产品：${selectionResult.productName} / ${selectionResult.model} / ${selectionResult.supplierName}。请结合海外工程项目合规要求输出审查意见。`}
+      />
 
       <section className="panel p-5 md:p-6">
         <div className="flex flex-wrap items-center justify-between gap-2">
