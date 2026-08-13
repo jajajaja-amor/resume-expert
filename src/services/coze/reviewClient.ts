@@ -7,7 +7,8 @@ import type {
 export async function fetchCozeStatus(): Promise<CozeStatusResponse> {
   try {
     const response = await fetch("/api/coze/status", { cache: "no-store" });
-    if (!response.ok) {
+    const contentType = response.headers.get("content-type") || "";
+    if (!response.ok || !contentType.includes("application/json")) {
       return {
         configured: false,
         workflowConfigured: false,
@@ -46,18 +47,38 @@ export async function submitCozeReview(input: {
   preferDemo?: boolean;
 }): Promise<CozeReviewApiResponse> {
   const form = new FormData();
-  form.set("contractText", input.contractText);
+  form.set("contractText", input.contractText || "");
   form.set("contractType", input.contractType);
   form.set("reviewStance", input.reviewStance);
   form.set("focusContent", input.focusContent);
   form.set("additionalRequirements", input.additionalRequirements);
   form.set("preferDemo", input.preferDemo ? "true" : "false");
-  if (input.file) form.set("file", input.file);
+  if (input.file) {
+    form.set("file", input.file, input.file.name);
+  }
 
-  const response = await fetch("/api/coze/review", {
-    method: "POST",
-    body: form,
-  });
+  let response: Response;
+  try {
+    response = await fetch("/api/coze/review", {
+      method: "POST",
+      body: form,
+    });
+  } catch {
+    return {
+      ok: false,
+      error: "网络请求失败，请检查服务是否运行后重试。",
+      retryable: true,
+    };
+  }
+
+  const contentType = response.headers.get("content-type") || "";
+  if (!contentType.includes("application/json")) {
+    return {
+      ok: false,
+      error: `服务异常（HTTP ${response.status}），请刷新页面后重试。`,
+      retryable: true,
+    };
+  }
 
   const data = (await response.json().catch(() => ({}))) as {
     result?: CozeReviewResult;

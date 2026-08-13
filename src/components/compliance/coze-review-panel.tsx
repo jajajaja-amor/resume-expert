@@ -1,17 +1,35 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { AlertTriangle, ExternalLink, Loader2, RefreshCw } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  AlertTriangle,
+  ExternalLink,
+  FileUp,
+  Loader2,
+  RefreshCw,
+  Trash2,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   fetchCozeStatus,
   fetchDemoCozeReview,
   submitCozeReview,
 } from "@/services/coze/reviewClient";
+import { cn, formatFileSize } from "@/lib/utils";
 import type { CozeReviewResult, CozeStatusResponse } from "@/types/coze-review";
 
 const CONTRACT_TYPES = ["采购合同", "供货合同", "服务合同", "框架协议", "其他"];
 const STANCES = ["甲方", "乙方", "中立审核"];
+const MAX_FILE_SIZE = 20 * 1024 * 1024;
+
+function statusBadgeText(status: CozeStatusResponse | null, loading: boolean): string {
+  if (loading || !status) return "正在检测扣子配置…";
+  if (status.reason === "status_unavailable") return "状态接口异常 · 请刷新后重试";
+  if (status.configured) return "扣子已配置（服务端）";
+  if (status.reason === "missing_pat") return "未检测到扣子密钥 · 可先用演示结果";
+  if (status.reason === "forced_mock") return "已强制演示模式";
+  return "未检测到扣子密钥 · 可先用演示结果";
+}
 
 export function CozeReviewPanel({
   defaultFocus,
@@ -20,7 +38,9 @@ export function CozeReviewPanel({
   defaultFocus?: string;
   defaultExtra?: string;
 }) {
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [status, setStatus] = useState<CozeStatusResponse | null>(null);
+  const [statusLoading, setStatusLoading] = useState(true);
   const [contractType, setContractType] = useState("采购合同");
   const [reviewStance, setReviewStance] = useState("甲方");
   const [focusContent, setFocusContent] = useState(
@@ -31,15 +51,37 @@ export function CozeReviewPanel({
   );
   const [contractText, setContractText] = useState("");
   const [file, setFile] = useState<File | null>(null);
+  const [dragging, setDragging] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [needsAuth, setNeedsAuth] = useState(false);
   const [debugUrl, setDebugUrl] = useState<string | undefined>();
   const [result, setResult] = useState<CozeReviewResult | null>(null);
 
-  useEffect(() => {
-    fetchCozeStatus().then(setStatus);
+  const refreshStatus = useCallback(async () => {
+    setStatusLoading(true);
+    const next = await fetchCozeStatus();
+    setStatus(next);
+    setStatusLoading(false);
   }, []);
+
+  useEffect(() => {
+    void refreshStatus();
+  }, [refreshStatus]);
+
+  function assignFile(next: File | null) {
+    setError(null);
+    if (!next) {
+      setFile(null);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      return;
+    }
+    if (next.size > MAX_FILE_SIZE) {
+      setError(`文件 ${next.name} 超过 20MB，请压缩或更换文件。`);
+      return;
+    }
+    setFile(next);
+  }
 
   async function handleSubmit(preferDemo = false) {
     if (!contractText.trim() && !file) {
@@ -71,6 +113,7 @@ export function CozeReviewPanel({
       }
 
       setResult(response.result);
+      void refreshStatus();
     } catch (e) {
       setError(e instanceof Error ? e.message : "提交失败，请重试");
     } finally {
@@ -106,8 +149,23 @@ export function CozeReviewPanel({
             提交合同文件/文本及审查要求，由服务端调用扣子工作流并返回结构化审查结果。
           </p>
         </div>
-        <div className="rounded-md border border-[var(--line)] bg-[var(--surface)] px-2.5 py-1 text-xs text-[var(--ink-muted)]">
-          {status?.configured ? "扣子已配置（服务端）" : "未检测到扣子密钥 · 将使用演示结果"}
+        <div className="flex items-center gap-2">
+          <div
+            className={cn(
+              "rounded-md border px-2.5 py-1 text-xs",
+              status?.configured
+                ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                : status?.reason === "status_unavailable"
+                  ? "border-red-200 bg-red-50 text-red-700"
+                  : "border-[var(--line)] bg-[var(--surface)] text-[var(--ink-muted)]"
+            )}
+          >
+            {statusBadgeText(status, statusLoading)}
+          </div>
+          <Button type="button" size="sm" variant="ghost" onClick={() => void refreshStatus()}>
+            <RefreshCw className="h-3.5 w-3.5" />
+            刷新状态
+          </Button>
         </div>
       </div>
 
@@ -163,26 +221,67 @@ export function CozeReviewPanel({
       </label>
 
       <div className="grid gap-4 md:grid-cols-2">
-        <label className="block text-sm">
-          <span className="mb-1 block text-[var(--ink-muted)]">上传合同文件</span>
-          <input
-            type="file"
-            accept=".pdf,.doc,.docx,.txt,.md"
-            className="block w-full text-sm"
-            onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-          />
-          {file ? (
+        <div className="text-sm">
+          <div className="mb-1 text-[var(--ink-muted)]">上传合同文件</div>
+          <div
+            className={cn(
+              "rounded-lg border border-dashed px-4 py-6 text-center transition-colors",
+              dragging ? "border-brand bg-brand-soft" : "border-[var(--line)] bg-white"
+            )}
+            onDragOver={(e) => {
+              e.preventDefault();
+              setDragging(true);
+            }}
+            onDragLeave={() => setDragging(false)}
+            onDrop={(e) => {
+              e.preventDefault();
+              setDragging(false);
+              const dropped = e.dataTransfer.files?.[0];
+              if (dropped) assignFile(dropped);
+            }}
+          >
+            <FileUp className="mx-auto h-7 w-7 text-brand" />
+            <p className="mt-2 font-medium">点击选择或拖拽文件到此处</p>
             <p className="mt-1 text-xs text-[var(--ink-muted)]">
-              已选择：{file.name}（{(file.size / 1024).toFixed(1)} KB）
+              支持 PDF / Word / TXT / MD，单个不超过 20MB
             </p>
-          ) : (
-            <p className="mt-1 text-xs text-[var(--ink-muted)]">支持 PDF / Word / TXT</p>
-          )}
-        </label>
+            <Button
+              type="button"
+              variant="outline"
+              className="mt-3"
+              onClick={() => fileInputRef.current?.click()}
+            >
+              选择文件
+            </Button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".pdf,.doc,.docx,.txt,.md,application/pdf,text/plain,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+              className="sr-only"
+              onChange={(e) => {
+                const next = e.target.files?.[0] ?? null;
+                assignFile(next);
+              }}
+            />
+          </div>
+          {file ? (
+            <div className="mt-3 flex items-center justify-between gap-2 rounded-md border border-[var(--line)] bg-[var(--surface)] px-3 py-2">
+              <div className="min-w-0">
+                <div className="truncate font-medium">{file.name}</div>
+                <div className="text-xs text-[var(--ink-muted)]">{formatFileSize(file.size)}</div>
+              </div>
+              <Button type="button" size="sm" variant="ghost" onClick={() => assignFile(null)}>
+                <Trash2 className="h-3.5 w-3.5" />
+                移除
+              </Button>
+            </div>
+          ) : null}
+        </div>
+
         <label className="block text-sm">
           <span className="mb-1 block text-[var(--ink-muted)]">或粘贴合同文本</span>
           <textarea
-            className="min-h-28 w-full rounded-md border border-[var(--line)] px-3 py-2"
+            className="min-h-40 w-full rounded-md border border-[var(--line)] px-3 py-2"
             value={contractText}
             onChange={(e) => setContractText(e.target.value)}
             placeholder="将合同关键条款粘贴于此…"
@@ -191,7 +290,7 @@ export function CozeReviewPanel({
       </div>
 
       <div className="flex flex-wrap gap-3">
-        <Button onClick={() => handleSubmit(false)} disabled={loading}>
+        <Button onClick={() => void handleSubmit(false)} disabled={loading}>
           {loading ? (
             <>
               <Loader2 className="h-4 w-4 animate-spin" />
@@ -201,7 +300,7 @@ export function CozeReviewPanel({
             "提交并调用扣子审查"
           )}
         </Button>
-        <Button variant="outline" onClick={handleUseDemo} disabled={loading}>
+        <Button variant="outline" onClick={() => void handleUseDemo()} disabled={loading}>
           使用演示结果
         </Button>
       </div>
@@ -228,11 +327,21 @@ export function CozeReviewPanel({
                 </a>
               ) : null}
               <div className="flex flex-wrap gap-2 pt-1">
-                <Button size="sm" variant="outline" onClick={() => handleSubmit(false)} disabled={loading}>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => void handleSubmit(false)}
+                  disabled={loading}
+                >
                   <RefreshCw className="h-3.5 w-3.5" />
                   重新尝试
                 </Button>
-                <Button size="sm" variant="secondary" onClick={handleUseDemo} disabled={loading}>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => void handleUseDemo()}
+                  disabled={loading}
+                >
                   查看演示结果
                 </Button>
               </div>

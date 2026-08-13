@@ -16,11 +16,17 @@ async function parseBody(request: Request): Promise<CozeReviewRequest> {
     let contractFileName: string | undefined;
     let contractFileMime: string | undefined;
 
-    if (file instanceof File) {
-      const buf = Buffer.from(await file.arrayBuffer());
-      contractFileBase64 = buf.toString("base64");
-      contractFileName = file.name;
-      contractFileMime = file.type || undefined;
+    if (file && typeof file === "object" && "arrayBuffer" in file) {
+      const blob = file as Blob & { name?: string; type?: string };
+      const buf = Buffer.from(await blob.arrayBuffer());
+      if (buf.byteLength > 0) {
+        contractFileBase64 = buf.toString("base64");
+        contractFileName =
+          (typeof file === "object" && "name" in file && typeof file.name === "string"
+            ? file.name
+            : undefined) || "contract.bin";
+        contractFileMime = blob.type || undefined;
+      }
     }
 
     return {
