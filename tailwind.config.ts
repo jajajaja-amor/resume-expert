@@ -15,6 +15,11 @@ const config: Config = {
         ring: "hsl(var(--ring))",
         background: "hsl(var(--background))",
         foreground: "hsl(var(--foreground))",
+        brand: {
+          DEFAULT: "#0f5c4c",
+          dark: "#0a3f35",
+          soft: "#e7f2ef",
+        },
         primary: {
           DEFAULT: "hsl(var(--primary))",
           foreground: "hsl(var(--primary-foreground))",
@@ -44,6 +49,15 @@ const config: Config = {
         lg: "var(--radius)",
         md: "calc(var(--radius) - 2px)",
         sm: "calc(var(--radius) - 4px)",
+      },
+      fontFamily: {
+        sans: ["var(--font-sans)"],
+        display: ["var(--font-display)"],
+      },
+      animation: {
+        "fade-up": "fade-up 0.45s ease-out both",
+        "bar-grow": "bar-grow 0.6s ease-out both",
+        "pulse-soft": "pulse-soft 1.4s ease-in-out infinite",
       },
     },
   },
