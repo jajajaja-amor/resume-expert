@@ -1,14 +1,14 @@
-# 简历专家
+# SpecLens · 海外工程产品合规审查工作台
 
-基于目标岗位 JD 的 AI 简历优化 Agent Web App。
+面向海外工程项目采购与合规审核场景的 AI Agent 工作流，将「产品比选」与「合规审核」两段流程串联。
+
+> AI Product Compliance Workspace — 从供应商产品资料，到产品选型，再到海外项目合规审核，一条工作流完成。
 
 ## 技术栈
 
-- Next.js App Router
-- TypeScript
-- Tailwind CSS
-- shadcn/ui
-- Zustand
+- Next.js App Router + TypeScript
+- Tailwind CSS + shadcn/ui
+- Zustand（含 localStorage 持久化）
 - lucide-react
 
 ## 快速开始
@@ -18,61 +18,68 @@ npm install
 npm run dev
 ```
 
-打开 [http://localhost:3000](http://localhost:3000)
+打开 [http://localhost:3000](http://localhost:3000)。默认运行 **Demo Mode**，内置「软膜天花 / 建筑装饰材料 × 3 供应商」演示数据，无需配置任何 API 即可完整体验全流程。
 
-## 使用流程
+## 页面结构
 
-1. 点击「使用示例数据」填充示例
-2. 点击「开始分析」触发 mock AI 分析
-3. 按左侧流程导航逐步查看各模块结果
-4. 在「经历追问」中填写回答并生成 bullet
-5. 在「导出结果」中复制最终简历
+| 路径 | 说明 |
+|------|------|
+| `/` | 工作台首页：工作流展示、两大入口、最近项目历史 |
+| `/compare` | 阶段一 · 产品比选：上传资料 → 参数提取 → 归一化 → 横向比较 → 六维评分 → 人工确认 → 选型结果 |
+| `/compliance` | 阶段二 · 合规审核：导入选型结果 → 上传规范 → 检查清单 → 逐条核查（PASS/FAIL/REVIEW/MISSING/N/A）→ 人工审核 → MAS 材料 → 最终报告与导出 |
 
-## 大模型接入
+**阶段一输出（SelectionResult）= 阶段二输入**，确认选型后自动传递，无需重复录入。
 
-1. 复制环境变量模板：
+## 演示流程
 
-```bash
-cp .env.example .env.local
+1. 首页进入「产品比选」，点击「载入演示数据（3 个供应商）」
+2. 点击「开始 AI 产品比选」，观察 Agent 步骤进度
+3. 在参数表中点击任意参数查看来源（文件 / 页码 / 原文 / 置信度），可修改参数或标记错误
+4. 查看归一化结果（单位换算、参数冲突、单位缺失待确认）
+5. 查看六维评分，点击「查看评分依据」，可人工修改评分
+6. 选择产品并「确认产品选型」，然后「进入合规审核」
+7. 确认产品信息已自动导入，点击「载入演示规范（4 份）」并生成检查清单
+8. 查看 PASS / FAIL / REVIEW / MISSING 统计与筛选，点击「查看依据」追溯 Evidence
+9. 在人工审核区处理 FAIL / REVIEW / MISSING 项，点击「确认合规审核结果」
+10. 审核并确认 AI 生成的 MAS 材料，生成最终合规审核报告
+11. 导出 Markdown / HTML / PDF（飞书导出为预留按钮，未配置时提示演示模式）
+
+## 核心原则
+
+- **所有 AI 判断可追溯**：每个参数、评分、合规结论都携带 Evidence（来源文件、页码、章节、原文、提取值、置信度）
+- **不猜测**：单位无法判断 → 待确认；参数冲突 → 人工确认；**缺少证据 ≠ 不合规**（判 MISSING 而非 FAIL）
+- **人工审核**：AI 生成结果仅供审核确认，选型与合规结论必须经人工确认
+
+## Agent 架构与真实 API 接入
+
+Agent 逻辑封装在 `src/services/agents/`，每个 Agent 可独立替换：
+
+```
+Document Parser → Parameter Extractor → Normalizer → Product Comparator
+→ Scoring Agent → Human Review → Selection Result
+→ Specification Parser → Checklist Generator → Compliance Checker
+→ Human Review → MAS Generator → Report Generator
 ```
 
-2. 填写 API Key 与模型配置（支持 OpenAI 兼容接口）：
+当前为 Mock Agent（Demo Mode），输入输出结构与真实 Agent 一致。接入真实工作流（扣子 / OpenAI / 自建后端 / RAG）时：
 
-```env
-LLM_API_KEY=sk-xxx
-LLM_BASE_URL=https://api.openai.com/v1
-LLM_MODEL=gpt-4o-mini
-```
-
-3. 重启开发服务器。顶部导航会显示 **AI 模式**；未配置 Key 时自动使用 **Mock 模式**。
-
-### 常用 Provider 示例
-
-| Provider | LLM_BASE_URL | LLM_MODEL |
-|----------|--------------|-----------|
-| OpenAI | https://api.openai.com/v1 | gpt-4o-mini |
-| DeepSeek | https://api.deepseek.com/v1 | deepseek-chat |
-| Moonshot | https://api.moonshot.cn/v1 | moonshot-v1-8k |
+1. 复制 `.env.example` 为 `.env.local`，配置 `AGENT_API_KEY`、`AGENT_API_URL`（仅服务端使用，切勿放入前端代码 / localStorage / Git）
+2. 在 `src/app/api/agents/` 下的 API Route 中调用真实接口
+3. 将 `src/services/agents/index.ts` 中的 Mock 实现替换为对服务端路由的 fetch，函数签名保持不变
 
 ## 项目结构
 
 ```
 src/
-├── app/                 # Next.js App Router
+├── app/                  # Next.js App Router（/、/compare、/compliance、/api/agents）
 ├── components/
-│   ├── layout/          # 布局组件
-│   ├── steps/           # 流程步骤页面
-│   ├── shared/          # 共享 UI 辅助
-│   └── ui/              # shadcn/ui 组件
-├── services/ai/         # AI 服务层
-│   ├── resumeAgent.ts         # 客户端 API 调用
-│   ├── resumeAgent.server.ts  # 服务端路由（Mock / LLM 切换）
-│   ├── resumeAgent.llm.ts     # 真实大模型调用
-│   └── resumeAgent.mock.ts    # Mock 数据
-├── app/api/             # Next.js API Routes（保护 API Key）
-│   ├── analyze/
-│   ├── optimize/
-│   └── follow-up/bullet/
-├── store/               # Zustand 状态管理
-└── types/               # TypeScript 类型定义
+│   ├── compare/          # 阶段一组件
+│   ├── compliance/       # 阶段二组件
+│   ├── layout/           # 页头
+│   ├── shared/           # 上传区、Agent 步骤、Evidence、状态标签、侧边栏
+│   └── ui/               # shadcn/ui 组件
+├── services/agents/      # Agent 服务层（Mock / 未来真实接口）
+├── store/                # Zustand 工作台状态（含持久化与历史记录）
+├── lib/                  # 导出、工具
+└── types/domain.ts       # 核心领域模型（Evidence / SelectionResult / ComplianceCheck 等）
 ```
