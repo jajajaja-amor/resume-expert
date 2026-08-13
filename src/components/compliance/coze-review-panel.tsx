@@ -56,6 +56,7 @@ export function CozeReviewPanel({
   const [error, setError] = useState<string | null>(null);
   const [needsAuth, setNeedsAuth] = useState(false);
   const [debugUrl, setDebugUrl] = useState<string | undefined>();
+  const [authUrl, setAuthUrl] = useState<string | undefined>();
   const [result, setResult] = useState<CozeReviewResult | null>(null);
 
   const refreshStatus = useCallback(async () => {
@@ -93,6 +94,7 @@ export function CozeReviewPanel({
     setError(null);
     setNeedsAuth(false);
     setDebugUrl(undefined);
+    setAuthUrl(undefined);
 
     try {
       const response = await submitCozeReview({
@@ -109,6 +111,7 @@ export function CozeReviewPanel({
         setError(response.error);
         setNeedsAuth(Boolean(response.needsAuth));
         setDebugUrl(response.debugUrl);
+        setAuthUrl(response.authUrl);
         return;
       }
 
@@ -312,20 +315,37 @@ export function CozeReviewPanel({
             <div className="space-y-2">
               <p>{error}</p>
               {needsAuth ? (
-                <p className="text-red-700">
-                  提示：当前工作流包含飞书云文档节点，需先在扣子平台完成飞书授权。
-                </p>
+                <div className="space-y-1 text-red-700">
+                  <p>提示：API 调用仍被飞书云文档节点中断。</p>
+                  <p>
+                    请到扣子工作流里打开「飞书云文档」节点，授权模式选
+                    <strong>共享授权</strong>
+                    （不要只用试运行时的单独授权），用开发者账号完成授权后再重试。
+                  </p>
+                </div>
               ) : null}
-              {debugUrl ? (
-                <a
-                  href={debugUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="inline-flex items-center gap-1 text-brand underline-offset-2 hover:underline"
-                >
-                  打开扣子调试页 <ExternalLink className="h-3.5 w-3.5" />
-                </a>
-              ) : null}
+              <div className="flex flex-col gap-1">
+                {authUrl ? (
+                  <a
+                    href={authUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1 font-medium text-brand underline-offset-2 hover:underline"
+                  >
+                    打开飞书授权页 <ExternalLink className="h-3.5 w-3.5" />
+                  </a>
+                ) : null}
+                {debugUrl ? (
+                  <a
+                    href={debugUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1 text-brand underline-offset-2 hover:underline"
+                  >
+                    打开扣子调试页 <ExternalLink className="h-3.5 w-3.5" />
+                  </a>
+                ) : null}
+              </div>
               <div className="flex flex-wrap gap-2 pt-1">
                 <Button
                   size="sm"

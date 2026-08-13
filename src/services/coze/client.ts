@@ -8,6 +8,7 @@ export class CozeWorkflowError extends Error {
   retryable: boolean;
   debugUrl?: string;
   needsAuth?: boolean;
+  authUrl?: string;
 
   constructor(
     message: string,
@@ -16,6 +17,7 @@ export class CozeWorkflowError extends Error {
       retryable?: boolean;
       debugUrl?: string;
       needsAuth?: boolean;
+      authUrl?: string;
     }
   ) {
     super(message);
@@ -24,6 +26,7 @@ export class CozeWorkflowError extends Error {
     this.retryable = options?.retryable ?? true;
     this.debugUrl = options?.debugUrl;
     this.needsAuth = options?.needsAuth;
+    this.authUrl = options?.authUrl;
   }
 }
 
@@ -159,23 +162,29 @@ export async function runCozeContractReview(
 
     if (json.interrupt_data) {
       let pluginName = "第三方插件";
+      let authUrl: string | undefined;
       try {
         const interruptPayload = JSON.parse(json.interrupt_data.data || "{}") as {
           plugin_name?: string;
           need_auth?: boolean;
+          auth_info?: string;
         };
         if (interruptPayload.plugin_name) pluginName = interruptPayload.plugin_name;
+        if (interruptPayload.auth_info?.startsWith("http")) {
+          authUrl = interruptPayload.auth_info;
+        }
       } catch {
         // ignore parse errors
       }
 
       throw new CozeWorkflowError(
-        `扣子工作流已启动，但需要完成「${pluginName}」授权后才能继续（常见于飞书云文档节点）。请先在扣子平台完成授权，然后重试；或先查看演示结果。`,
+        `扣子工作流已启动，但仍需要「${pluginName}」授权才能继续。请在扣子工作流的飞书节点选择「共享授权」并完成授权（仅试运行授权往往对 API 无效），然后回到本页重试；也可先查看演示结果。`,
         {
           code: json.interrupt_data.type,
           retryable: true,
           debugUrl: json.debug_url,
           needsAuth: true,
+          authUrl,
         }
       );
     }

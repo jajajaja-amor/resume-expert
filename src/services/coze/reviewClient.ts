@@ -35,6 +35,7 @@ export type CozeReviewApiResponse =
       retryable?: boolean;
       needsAuth?: boolean;
       debugUrl?: string;
+      authUrl?: string;
     };
 
 export async function submitCozeReview(input: {
@@ -87,6 +88,7 @@ export async function submitCozeReview(input: {
     retryable?: boolean;
     needsAuth?: boolean;
     debugUrl?: string;
+    authUrl?: string;
   };
 
   if (!response.ok || !data.result) {
@@ -96,6 +98,7 @@ export async function submitCozeReview(input: {
       retryable: data.retryable ?? true,
       needsAuth: data.needsAuth,
       debugUrl: data.debugUrl,
+      authUrl: data.authUrl,
     };
   }
 

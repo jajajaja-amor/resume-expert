@@ -78,7 +78,7 @@ export async function POST(request: Request) {
           retryable: error.retryable,
           needsAuth: error.needsAuth,
           debugUrl: error.debugUrl,
-          // provide demo payload optionally when client asks via query? keep separate endpoint action
+          authUrl: error.authUrl,
         },
         { status: 502 }
       );
