@@ -245,7 +245,7 @@ export default function CompliancePage() {
         <section className="panel max-w-3xl p-6 animate-fade-up">
           <h1 className="font-display text-3xl font-semibold">AI 产品合规审核</h1>
           <p className="mt-3 text-sm text-[var(--ink-muted)]">
-            当前暂无已确认的产品选型结果。你仍可先使用下方「扣子工作流 · 合同合规审查」；完整产品规范核查请先完成产品比选。
+            请先完成产品比选并确认推荐产品。系统会将比选结构化结果（产品类型、公司名称、认证报告、技术资料、单价、总价、服务物流与补充要求）提交至扣子工作流进行合规审查。
           </p>
           <Button asChild className="mt-5">
             <Link href="/compare">
@@ -253,7 +253,7 @@ export default function CompliancePage() {
             </Link>
           </Button>
         </section>
-        <CozeReviewPanel />
+        <CozeReviewPanel selection={null} />
       </div>
     );
   }
@@ -265,7 +265,7 @@ export default function CompliancePage() {
           <div>
             <h1 className="font-display text-3xl font-semibold">AI 产品合规审核</h1>
             <p className="mt-2 max-w-2xl text-sm text-[var(--ink-muted)] md:text-base">
-              基于已确认产品和项目规范，逐项检查产品是否满足海外工程项目要求；合同文本可提交至扣子工作流审查。
+              已导入产品比选结构化结果。提交后由服务端调用扣子工作流，并展示审查意见、法律/企业核验与飞书报告地址。
             </p>
           </div>
           <Button variant="outline" size="sm" onClick={resetCompliance}>
@@ -274,11 +274,6 @@ export default function CompliancePage() {
           </Button>
         </div>
       </section>
-
-      <CozeReviewPanel
-        defaultFocus="付款条款、违约责任、防火/认证合规、交付资料完整性"
-        defaultExtra={`关联选型产品：${selectionResult.productName} / ${selectionResult.model} / ${selectionResult.supplierName}。请结合海外工程项目合规要求输出审查意见。`}
-      />
 
       <section className="panel p-5 md:p-6">
         <div className="flex flex-wrap items-center justify-between gap-2">
@@ -302,6 +297,8 @@ export default function CompliancePage() {
           ))}
         </div>
       </section>
+
+      <CozeReviewPanel selection={selectionResult} />
 
       {checks.length > 0 ? (
         <section className="panel p-5 md:p-6 animate-fade-up">

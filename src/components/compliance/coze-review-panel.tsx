@@ -1,13 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import {
   AlertTriangle,
+  ArrowRight,
   ExternalLink,
-  FileUp,
   Loader2,
   RefreshCw,
-  Trash2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -15,12 +15,10 @@ import {
   fetchDemoCozeReview,
   submitCozeReview,
 } from "@/services/coze/reviewClient";
-import { cn, formatFileSize } from "@/lib/utils";
+import { selectionToProductPayload } from "@/services/coze/selection-payload";
+import { cn } from "@/lib/utils";
 import type { CozeReviewResult, CozeStatusResponse } from "@/types/coze-review";
-
-const CONTRACT_TYPES = ["采购合同", "供货合同", "服务合同", "框架协议", "其他"];
-const STANCES = ["甲方", "乙方", "中立审核"];
-const MAX_FILE_SIZE = 20 * 1024 * 1024;
+import type { SelectionResult } from "@/types/workspace";
 
 function statusBadgeText(status: CozeStatusResponse | null, loading: boolean): string {
   if (loading || !status) return "正在检测扣子配置…";
@@ -33,32 +31,24 @@ function statusBadgeText(status: CozeStatusResponse | null, loading: boolean): s
 }
 
 export function CozeReviewPanel({
-  defaultFocus,
-  defaultExtra,
+  selection,
 }: {
-  defaultFocus?: string;
-  defaultExtra?: string;
+  selection: SelectionResult | null;
 }) {
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const [status, setStatus] = useState<CozeStatusResponse | null>(null);
   const [statusLoading, setStatusLoading] = useState(true);
-  const [contractType, setContractType] = useState("采购合同");
-  const [reviewStance, setReviewStance] = useState("甲方");
-  const [focusContent, setFocusContent] = useState(
-    defaultFocus || "付款条款、违约责任、合规认证与交付资料"
-  );
-  const [additionalRequirements, setAdditionalRequirements] = useState(
-    defaultExtra || "请输出审查意见、法律引用核验、企业信息核验，并尽量提供飞书报告链接"
-  );
-  const [contractText, setContractText] = useState("");
-  const [file, setFile] = useState<File | null>(null);
-  const [dragging, setDragging] = useState(false);
+  const [additionalRequirements, setAdditionalRequirements] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [needsAuth, setNeedsAuth] = useState(false);
   const [debugUrl, setDebugUrl] = useState<string | undefined>();
   const [authUrl, setAuthUrl] = useState<string | undefined>();
   const [result, setResult] = useState<CozeReviewResult | null>(null);
+
+  const payload = useMemo(() => {
+    if (!selection) return null;
+    return selectionToProductPayload(selection, additionalRequirements);
+  }, [selection, additionalRequirements]);
 
   const refreshStatus = useCallback(async () => {
     setStatusLoading(true);
@@ -71,23 +61,22 @@ export function CozeReviewPanel({
     void refreshStatus();
   }, [refreshStatus]);
 
-  function assignFile(next: File | null) {
-    setError(null);
-    if (!next) {
-      setFile(null);
-      if (fileInputRef.current) fileInputRef.current.value = "";
-      return;
-    }
-    if (next.size > MAX_FILE_SIZE) {
-      setError(`文件 ${next.name} 超过 20MB，请压缩或更换文件。`);
-      return;
-    }
-    setFile(next);
-  }
+  useEffect(() => {
+    if (!selection) return;
+    if (additionalRequirements) return;
+    const preset = [
+      ...selection.pendingItems,
+      selection.humanNotes || "",
+      "请结合海外工程项目规范完成合规审查，并输出审查意见、法律引用核验、企业信息核验与飞书报告。",
+    ]
+      .filter(Boolean)
+      .join("\n");
+    setAdditionalRequirements(preset);
+  }, [selection]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function handleSubmit(preferDemo = false) {
-    if (!contractText.trim() && !file) {
-      setError("请上传合同文件，或粘贴合同文本。");
+    if (!payload) {
+      setError("当前暂无已确认的产品选型结果，请先完成产品比选。");
       return;
     }
 
@@ -99,12 +88,12 @@ export function CozeReviewPanel({
 
     try {
       const response = await submitCozeReview({
-        contractText,
-        contractType,
-        reviewStance,
-        focusContent,
+        productPayload: {
+          ...payload,
+          additionalRequirements:
+            additionalRequirements.trim() || payload.additionalRequirements,
+        },
         additionalRequirements,
-        file,
         preferDemo,
       });
 
@@ -126,14 +115,19 @@ export function CozeReviewPanel({
   }
 
   async function handleUseDemo() {
+    if (!payload) {
+      setError("当前暂无已确认的产品选型结果，请先完成产品比选。");
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
       const demo = await fetchDemoCozeReview({
-        contractText,
-        contractType,
-        reviewStance,
-        focusContent,
+        productPayload: {
+          ...payload,
+          additionalRequirements:
+            additionalRequirements.trim() || payload.additionalRequirements,
+        },
         additionalRequirements,
       });
       setResult(demo);
@@ -144,13 +138,29 @@ export function CozeReviewPanel({
     }
   }
 
+  if (!selection || !payload) {
+    return (
+      <section className="panel space-y-4 p-5 md:p-6">
+        <h2 className="font-display text-xl font-semibold">扣子工作流 · 产品合规审查</h2>
+        <p className="text-sm text-[var(--ink-muted)]">
+          当前暂无已确认的产品选型结构化结果。请先完成产品比选并确认选型，系统会自动带入产品类型、公司名称、认证报告、技术资料、价格与物流等信息。
+        </p>
+        <Button asChild>
+          <Link href="/compare">
+            前往产品比选 <ArrowRight className="h-4 w-4" />
+          </Link>
+        </Button>
+      </section>
+    );
+  }
+
   return (
     <section className="panel space-y-5 p-5 md:p-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h2 className="font-display text-xl font-semibold">扣子工作流 · 合同合规审查</h2>
+          <h2 className="font-display text-xl font-semibold">扣子工作流 · 产品合规审查</h2>
           <p className="mt-1 text-sm text-[var(--ink-muted)]">
-            提交合同文件/文本及审查要求，由服务端调用扣子工作流并返回结构化审查结果。
+            已导入阶段一选型结构化结果。提交后将把产品类型、公司名称、认证报告、软膜天花技术性资料、单价、总价、服务物流与补充要求发送给扣子工作流。
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -173,125 +183,52 @@ export function CozeReviewPanel({
         </div>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2">
-        <label className="block text-sm">
-          <span className="mb-1 block text-[var(--ink-muted)]">合同类型</span>
-          <select
-            className="h-10 w-full rounded-md border border-[var(--line)] bg-white px-3"
-            value={contractType}
-            onChange={(e) => setContractType(e.target.value)}
-          >
-            {CONTRACT_TYPES.map((t) => (
-              <option key={t} value={t}>
-                {t}
-              </option>
+      <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+        ✓ 已从产品比选阶段导入结构化文件（SelectionResult）
+      </div>
+
+      <div className="table-scroll">
+        <table className="w-full min-w-[720px] text-left text-sm">
+          <thead className="border-b border-[var(--line)] bg-[var(--surface)] text-[var(--ink-muted)]">
+            <tr>
+              <th className="px-3 py-2 font-medium">字段</th>
+              <th className="px-3 py-2 font-medium">将发送给扣子的值</th>
+            </tr>
+          </thead>
+          <tbody>
+            {[
+              ["产品类型", payload.productType],
+              ["公司名称", payload.companyName],
+              ["认证报告", payload.certificationReport],
+              ["单价", payload.unitPrice],
+              ["总价", payload.totalPrice],
+            ].map(([label, value]) => (
+              <tr key={label} className="border-b border-[var(--line)]">
+                <td className="px-3 py-2.5 font-medium">{label}</td>
+                <td className="px-3 py-2.5 whitespace-pre-wrap">{value}</td>
+              </tr>
             ))}
-          </select>
-        </label>
-        <label className="block text-sm">
-          <span className="mb-1 block text-[var(--ink-muted)]">审查立场</span>
-          <select
-            className="h-10 w-full rounded-md border border-[var(--line)] bg-white px-3"
-            value={reviewStance}
-            onChange={(e) => setReviewStance(e.target.value)}
-          >
-            {STANCES.map((t) => (
-              <option key={t} value={t}>
-                {t}
-              </option>
-            ))}
-          </select>
-        </label>
+            <tr className="border-b border-[var(--line)]">
+              <td className="px-3 py-2.5 font-medium">软膜天花技术性资料</td>
+              <td className="px-3 py-2.5 whitespace-pre-wrap">{payload.technicalMaterials}</td>
+            </tr>
+            <tr className="border-b border-[var(--line)]">
+              <td className="px-3 py-2.5 font-medium">服务物流</td>
+              <td className="px-3 py-2.5 whitespace-pre-wrap">{payload.serviceLogistics}</td>
+            </tr>
+          </tbody>
+        </table>
       </div>
 
       <label className="block text-sm">
-        <span className="mb-1 block text-[var(--ink-muted)]">重点审查内容</span>
-        <input
-          className="h-10 w-full rounded-md border border-[var(--line)] px-3"
-          value={focusContent}
-          onChange={(e) => setFocusContent(e.target.value)}
-          placeholder="例如：付款条款、违约责任、知识产权、合规认证"
-        />
-      </label>
-
-      <label className="block text-sm">
-        <span className="mb-1 block text-[var(--ink-muted)]">补充要求</span>
+        <span className="mb-1 block text-[var(--ink-muted)]">补充要求（可编辑）</span>
         <textarea
-          className="min-h-20 w-full rounded-md border border-[var(--line)] px-3 py-2"
+          className="min-h-28 w-full rounded-md border border-[var(--line)] px-3 py-2"
           value={additionalRequirements}
           onChange={(e) => setAdditionalRequirements(e.target.value)}
-          placeholder="补充说明审查关注点、输出格式等"
+          placeholder="补充项目规范关注点、交付与合规要求等"
         />
       </label>
-
-      <div className="grid gap-4 md:grid-cols-2">
-        <div className="text-sm">
-          <div className="mb-1 text-[var(--ink-muted)]">上传合同文件</div>
-          <div
-            className={cn(
-              "rounded-lg border border-dashed px-4 py-6 text-center transition-colors",
-              dragging ? "border-brand bg-brand-soft" : "border-[var(--line)] bg-white"
-            )}
-            onDragOver={(e) => {
-              e.preventDefault();
-              setDragging(true);
-            }}
-            onDragLeave={() => setDragging(false)}
-            onDrop={(e) => {
-              e.preventDefault();
-              setDragging(false);
-              const dropped = e.dataTransfer.files?.[0];
-              if (dropped) assignFile(dropped);
-            }}
-          >
-            <FileUp className="mx-auto h-7 w-7 text-brand" />
-            <p className="mt-2 font-medium">点击选择或拖拽文件到此处</p>
-            <p className="mt-1 text-xs text-[var(--ink-muted)]">
-              支持 PDF / Word / TXT / MD，单个不超过 20MB
-            </p>
-            <Button
-              type="button"
-              variant="outline"
-              className="mt-3"
-              onClick={() => fileInputRef.current?.click()}
-            >
-              选择文件
-            </Button>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".pdf,.doc,.docx,.txt,.md,application/pdf,text/plain,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-              className="sr-only"
-              onChange={(e) => {
-                const next = e.target.files?.[0] ?? null;
-                assignFile(next);
-              }}
-            />
-          </div>
-          {file ? (
-            <div className="mt-3 flex items-center justify-between gap-2 rounded-md border border-[var(--line)] bg-[var(--surface)] px-3 py-2">
-              <div className="min-w-0">
-                <div className="truncate font-medium">{file.name}</div>
-                <div className="text-xs text-[var(--ink-muted)]">{formatFileSize(file.size)}</div>
-              </div>
-              <Button type="button" size="sm" variant="ghost" onClick={() => assignFile(null)}>
-                <Trash2 className="h-3.5 w-3.5" />
-                移除
-              </Button>
-            </div>
-          ) : null}
-        </div>
-
-        <label className="block text-sm">
-          <span className="mb-1 block text-[var(--ink-muted)]">或粘贴合同文本</span>
-          <textarea
-            className="min-h-40 w-full rounded-md border border-[var(--line)] px-3 py-2"
-            value={contractText}
-            onChange={(e) => setContractText(e.target.value)}
-            placeholder="将合同关键条款粘贴于此…"
-          />
-        </label>
-      </div>
 
       <div className="flex flex-wrap gap-3">
         <Button onClick={() => void handleSubmit(false)} disabled={loading}>
@@ -301,7 +238,7 @@ export function CozeReviewPanel({
               正在调用扣子工作流…
             </>
           ) : (
-            "提交并调用扣子审查"
+            "提交结构化结果并调用扣子审查"
           )}
         </Button>
         <Button variant="outline" onClick={() => void handleUseDemo()} disabled={loading}>
@@ -317,10 +254,9 @@ export function CozeReviewPanel({
               <p>{error}</p>
               {needsAuth ? (
                 <div className="space-y-1 text-red-700">
-                  <p>提示：扣子内部的「飞书云文档」插件仍未授权完成（API 被中断）。</p>
+                  <p>提示：扣子内部「飞书云文档」插件仍可能中断 API。</p>
                   <p>
-                    可到扣子飞书节点改用<strong>共享授权</strong>后重试；也可点「查看演示结果」——
-                    系统会用已配置的飞书应用直接生成报告表格链接。
+                    可到扣子飞书节点使用<strong>共享授权</strong>后重试；或点「查看演示结果」，系统会用已配置的飞书应用生成报告链接。
                   </p>
                 </div>
               ) : null}
@@ -470,23 +406,22 @@ function CozeResultView({ result }: { result: CozeReviewResult }) {
       <div className="rounded-md border border-[var(--line)] p-4 text-sm">
         <h3 className="font-semibold">飞书完整审查报告地址</h3>
         {result.feishuReportUrl ? (
-          <a
-            href={result.feishuReportUrl}
-            target="_blank"
-            rel="noreferrer"
-            className="mt-2 inline-flex items-center gap-1 text-brand underline-offset-2 hover:underline"
-          >
-            {result.feishuReportUrl}
-            <ExternalLink className="h-3.5 w-3.5" />
-          </a>
+          <div className="mt-2 space-y-1">
+            <a
+              href={result.feishuReportUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1 text-brand underline-offset-2 hover:underline"
+            >
+              {result.feishuReportUrl}
+              <ExternalLink className="h-3.5 w-3.5" />
+            </a>
+            <p className="text-xs text-[var(--ink-muted)]">
+              由服务端飞书应用生成（当前为电子表格报告）。
+            </p>
+          </div>
         ) : (
-          <p className="mt-2 text-[var(--ink-muted)]">
-            当前未返回飞书报告地址
-            {result.source === "demo"
-              ? "（演示模式不生成真实飞书文档）"
-              : "（可能因飞书节点未授权或工作流未输出该字段）"}
-            。
-          </p>
+          <p className="mt-2 text-[var(--ink-muted)]">当前未返回飞书报告地址。</p>
         )}
         {result.debugUrl ? (
           <a

@@ -1,4 +1,4 @@
-/** Structured result for Coze contract / compliance review */
+/** Structured result for Coze product compliance review */
 
 export interface CozeReviewOpinion {
   id: string;
@@ -37,17 +37,46 @@ export interface CozeReviewResult {
   executeId?: string;
 }
 
+/** Fields sent to Coze from product selection (阶段一 → 阶段二) */
+export interface ProductCompliancePayload {
+  /** 产品类型 */
+  productType: string;
+  /** 公司名称 */
+  companyName: string;
+  /** 认证报告 */
+  certificationReport: string;
+  /** 软膜天花技术性资料 */
+  technicalMaterials: string;
+  /** 单价 */
+  unitPrice: string;
+  /** 总价 */
+  totalPrice: string;
+  /** 服务物流 */
+  serviceLogistics: string;
+  /** 补充要求 */
+  additionalRequirements: string;
+  /** 原始选型摘要（便于追溯） */
+  selectionSummary?: {
+    projectName?: string;
+    productName?: string;
+    model?: string;
+    overallScore?: number;
+    sourceDocuments?: string[];
+  };
+}
+
 export interface CozeReviewRequest {
+  /** Prefer structured product compliance payload from selection */
+  productPayload?: ProductCompliancePayload;
+  /** @deprecated legacy contract fields kept for backward compatibility */
   contractText?: string;
   contractFileName?: string;
-  /** base64 of file bytes when uploaded from browser */
   contractFileBase64?: string;
   contractFileMime?: string;
-  contractType: string;
-  reviewStance: string;
-  focusContent: string;
-  additionalRequirements: string;
-  /** allow client to force demo for presentation */
+  contractType?: string;
+  reviewStance?: string;
+  focusContent?: string;
+  additionalRequirements?: string;
   preferDemo?: boolean;
 }
 

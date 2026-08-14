@@ -2,6 +2,7 @@ import type {
   CozeReviewRequest,
   CozeReviewResult,
   CozeStatusResponse,
+  ProductCompliancePayload,
 } from "@/types/coze-review";
 
 export async function fetchCozeStatus(): Promise<CozeStatusResponse> {
@@ -39,30 +40,20 @@ export type CozeReviewApiResponse =
     };
 
 export async function submitCozeReview(input: {
-  contractText: string;
-  contractType: string;
-  reviewStance: string;
-  focusContent: string;
-  additionalRequirements: string;
-  file?: File | null;
+  productPayload: ProductCompliancePayload;
+  additionalRequirements?: string;
   preferDemo?: boolean;
 }): Promise<CozeReviewApiResponse> {
-  const form = new FormData();
-  form.set("contractText", input.contractText || "");
-  form.set("contractType", input.contractType);
-  form.set("reviewStance", input.reviewStance);
-  form.set("focusContent", input.focusContent);
-  form.set("additionalRequirements", input.additionalRequirements);
-  form.set("preferDemo", input.preferDemo ? "true" : "false");
-  if (input.file) {
-    form.set("file", input.file, input.file.name);
-  }
-
   let response: Response;
   try {
     response = await fetch("/api/coze/review", {
       method: "POST",
-      body: form,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        productPayload: input.productPayload,
+        additionalRequirements: input.additionalRequirements || "",
+        preferDemo: Boolean(input.preferDemo),
+      } satisfies CozeReviewRequest),
     });
   } catch {
     return {

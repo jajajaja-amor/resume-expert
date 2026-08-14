@@ -231,15 +231,39 @@ export function parseCozeWorkflowData(
 }
 
 export function buildXuqiuText(input: {
-  contractType: string;
-  reviewStance: string;
-  focusContent: string;
-  additionalRequirements: string;
+  productPayload?: import("@/types/coze-review").ProductCompliancePayload;
+  contractType?: string;
+  reviewStance?: string;
+  focusContent?: string;
+  additionalRequirements?: string;
   contractText?: string;
 }): string {
+  if (input.productPayload) {
+    const p = input.productPayload;
+    return [
+      "请基于以下产品比选结构化结果，完成海外工程产品合规审查。",
+      "",
+      `产品类型：${p.productType}`,
+      `公司名称：${p.companyName}`,
+      `认证报告：${p.certificationReport}`,
+      `单价：${p.unitPrice}`,
+      `总价：${p.totalPrice}`,
+      `服务物流：${p.serviceLogistics}`,
+      `补充要求：${p.additionalRequirements}`,
+      "",
+      "软膜天花技术性资料已附在结构化文件（wenjian）中。",
+      "",
+      "请输出：",
+      "1) 审查意见列表（每条含问题、分析、修改建议）",
+      "2) 法律引用核验结果",
+      "3) 企业信息核验结果",
+      "4) 飞书完整审查报告地址（如已生成）",
+    ].join("\n");
+  }
+
   const lines = [
-    `合同类型：${input.contractType}`,
-    `审查立场：${input.reviewStance}`,
+    `合同类型：${input.contractType || "采购合同"}`,
+    `审查立场：${input.reviewStance || "甲方"}`,
     `重点审查内容：${input.focusContent || "通用条款与合规风险"}`,
     `补充要求：${input.additionalRequirements || "无"}`,
     "",

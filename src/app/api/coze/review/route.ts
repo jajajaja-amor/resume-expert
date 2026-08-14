@@ -2,55 +2,66 @@ import { NextResponse } from "next/server";
 import { CozeWorkflowError, runCozeContractReview } from "@/services/coze/client";
 import { buildDemoCozeReview } from "@/services/coze/mock";
 import { maybeAttachFeishuReport } from "@/services/feishu/client";
-import type { CozeReviewRequest } from "@/types/coze-review";
+import type { CozeReviewRequest, ProductCompliancePayload } from "@/types/coze-review";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
+
+function asPayload(value: unknown): ProductCompliancePayload | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const obj = value as Record<string, unknown>;
+  if (!obj.productType && !obj.companyName) return undefined;
+  return {
+    productType: String(obj.productType || ""),
+    companyName: String(obj.companyName || ""),
+    certificationReport: String(obj.certificationReport || ""),
+    technicalMaterials: String(obj.technicalMaterials || ""),
+    unitPrice: String(obj.unitPrice || ""),
+    totalPrice: String(obj.totalPrice || ""),
+    serviceLogistics: String(obj.serviceLogistics || ""),
+    additionalRequirements: String(obj.additionalRequirements || ""),
+    selectionSummary:
+      obj.selectionSummary && typeof obj.selectionSummary === "object"
+        ? (obj.selectionSummary as ProductCompliancePayload["selectionSummary"])
+        : undefined,
+  };
+}
 
 async function parseBody(request: Request): Promise<CozeReviewRequest> {
   const contentType = request.headers.get("content-type") || "";
 
   if (contentType.includes("multipart/form-data")) {
     const form = await request.formData();
-    const file = form.get("file");
-    let contractFileBase64: string | undefined;
-    let contractFileName: string | undefined;
-    let contractFileMime: string | undefined;
-
-    if (file && typeof file === "object" && "arrayBuffer" in file) {
-      const blob = file as Blob & { name?: string; type?: string };
-      const buf = Buffer.from(await blob.arrayBuffer());
-      if (buf.byteLength > 0) {
-        contractFileBase64 = buf.toString("base64");
-        contractFileName =
-          (typeof file === "object" && "name" in file && typeof file.name === "string"
-            ? file.name
-            : undefined) || "contract.bin";
-        contractFileMime = blob.type || undefined;
+    const rawPayload = form.get("productPayload");
+    let productPayload: ProductCompliancePayload | undefined;
+    if (typeof rawPayload === "string" && rawPayload.trim()) {
+      try {
+        productPayload = asPayload(JSON.parse(rawPayload));
+      } catch {
+        productPayload = undefined;
       }
     }
 
     return {
-      contractText: String(form.get("contractText") || ""),
-      contractType: String(form.get("contractType") || "采购合同"),
-      reviewStance: String(form.get("reviewStance") || "甲方"),
-      focusContent: String(form.get("focusContent") || ""),
+      productPayload,
       additionalRequirements: String(form.get("additionalRequirements") || ""),
       preferDemo: String(form.get("preferDemo") || "") === "true",
-      contractFileBase64,
-      contractFileName,
-      contractFileMime,
+      contractText: String(form.get("contractText") || ""),
+      contractType: String(form.get("contractType") || ""),
+      reviewStance: String(form.get("reviewStance") || ""),
+      focusContent: String(form.get("focusContent") || ""),
     };
   }
 
   const json = (await request.json()) as CozeReviewRequest;
   return {
-    contractText: json.contractText || "",
-    contractType: json.contractType || "采购合同",
-    reviewStance: json.reviewStance || "甲方",
-    focusContent: json.focusContent || "",
+    productPayload: asPayload(json.productPayload) || json.productPayload,
     additionalRequirements: json.additionalRequirements || "",
     preferDemo: Boolean(json.preferDemo),
+    contractText: json.contractText || "",
+    contractType: json.contractType,
+    reviewStance: json.reviewStance,
+    focusContent: json.focusContent,
     contractFileBase64: json.contractFileBase64,
     contractFileName: json.contractFileName,
     contractFileMime: json.contractFileMime,
@@ -61,11 +72,22 @@ export async function POST(request: Request) {
   try {
     const body = await parseBody(request);
 
-    if (!body.contractText?.trim() && !body.contractFileBase64) {
+    if (
+      !body.productPayload &&
+      !body.contractText?.trim() &&
+      !body.contractFileBase64
+    ) {
       return NextResponse.json(
-        { error: "请上传合同文件或填写合同文本。" },
+        { error: "缺少产品比选结构化结果，请先完成产品比选。" },
         { status: 400 }
       );
+    }
+
+    if (body.productPayload && body.additionalRequirements?.trim()) {
+      body.productPayload = {
+        ...body.productPayload,
+        additionalRequirements: body.additionalRequirements.trim(),
+      };
     }
 
     const { result, mode } = await runCozeContractReview(body);
@@ -73,8 +95,6 @@ export async function POST(request: Request) {
     return NextResponse.json({ result: withFeishu, mode });
   } catch (error) {
     if (error instanceof CozeWorkflowError) {
-      // If Coze is blocked on its own Feishu plugin OAuth, still allow client to
-      // fall back to demo + our Feishu app report via PUT /api/coze/review.
       return NextResponse.json(
         {
           error: error.message,
@@ -98,13 +118,7 @@ export async function POST(request: Request) {
 export async function PUT(request: Request) {
   try {
     const body = (await request.json()) as CozeReviewRequest;
-    const result = buildDemoCozeReview({
-      contractType: body.contractType || "采购合同",
-      reviewStance: body.reviewStance || "甲方",
-      focusContent: body.focusContent || "",
-      additionalRequirements: body.additionalRequirements || "",
-      contractText: body.contractText || "",
-    });
+    const result = buildDemoCozeReview(body);
     const withFeishu = await maybeAttachFeishuReport(result);
     return NextResponse.json({ result: withFeishu, mode: "demo" as const });
   } catch (error) {
