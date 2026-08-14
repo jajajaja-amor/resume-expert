@@ -1,6 +1,8 @@
-# 简历专家
+# SpecLens · 海外工程产品合规审查工作台
 
-基于目标岗位 JD 的 AI 简历优化 Agent Web App。
+面向海外工程 EPC 设计师、采购与审核人员的 **AI Agent 工作台**：将「产品比选」与「合规审核」串联为一条可演示、可追溯的完整业务流程。
+
+> SpecLens · AI Product Compliance Workspace
 
 ## 技术栈
 
@@ -8,71 +10,97 @@
 - TypeScript
 - Tailwind CSS
 - shadcn/ui
-- Zustand
-- lucide-react
+- Zustand（本地持久化选型结果与历史）
+- Mock Agent（可替换为真实 Agent API）
 
 ## 快速开始
 
 ```bash
 npm install
+pip3 install --user -r requirements-docs.txt   # 真实 PDF/DOCX/XLSX 解析（biaoshu-writer-pro）
 npm run dev
 ```
 
 打开 [http://localhost:3000](http://localhost:3000)
 
-## 使用流程
+> 文档解析使用 `scripts/parse_document.py`（源自 SkillHub `@user_509b3ac1/biaoshu-writer-pro`），经 `/api/documents/parse` 服务端提取文本后再做参数抽取。扫描版 PDF 无文字层时需 OCR 或粘贴原文。
 
-1. 点击「使用示例数据」填充示例
-2. 点击「开始分析」触发 mock AI 分析
-3. 按左侧流程导航逐步查看各模块结果
-4. 在「经历追问」中填写回答并生成 bullet
-5. 在「导出结果」中复制最终简历
+## 页面
 
-## 大模型接入
+| 路径 | 说明 |
+|------|------|
+| `/` | 工作台首页、工作流说明、最近项目 |
+| `/compare` | 产品资料上传 → 参数提取/归一化 → 六维评分 → 人工确认选型 |
+| `/compliance` | 导入选型结果 → 规范上传 → 逐条合规核查 → MAS → 最终报告导出 |
 
-1. 复制环境变量模板：
+## 演示流程（无需配置 API）
+
+1. 打开首页，进入 **产品比选**
+2. 点击 **载入 Demo 资料（3 个供应商）**
+3. 点击 **开始 AI 产品比选**，观察 Agent 步骤
+4. 查看参数表、点击单元格查看来源；查看归一化与六维评分
+5. 修改一个评分后 **确认产品选型**
+6. 进入 **合规审核**（选型结果自动导入）
+7. 使用 **Demo 项目规范** → **开始合规核查**
+8. 筛选 PASS / FAIL / REVIEW / MISSING，点击 **查看依据**
+9. 在人工审核区处理 REVIEW/MISSING 后确认
+10. 生成 MAS 材料与最终报告，导出 Markdown / HTML
+
+页面会明确提示：**当前为演示模式，以下数据为模拟数据。**
+
+## Demo 数据
+
+内置场景：**软膜天花 / 建筑装饰材料**（中东酒店大堂选型）
+
+- 3 个供应商（价格、重量、防火、认证、企业能力不同）
+- 参数冲突、单位归一化、待确认项
+- 合规结果覆盖 PASS / FAIL / REVIEW / MISSING / NOT_APPLICABLE
+
+## 真实 Agent / 扣子接入
+
+密钥只能放在服务端环境变量或 Secrets，不要写入前端或仓库。
 
 ```bash
 cp .env.example .env.local
 ```
 
-2. 填写 API Key 与模型配置（支持 OpenAI 兼容接口）：
-
 ```env
 LLM_API_KEY=sk-xxx
 LLM_BASE_URL=https://api.openai.com/v1
 LLM_MODEL=gpt-4o-mini
+
+# 扣子工作流（合同合规审查，服务端调用）
+COZE_PAT=your_pat_here
+COZE_WORKFLOW_ID=7673528525253820442
+COZE_API_BASE=https://api.coze.cn
 ```
 
-3. 重启开发服务器。顶部导航会显示 **AI 模式**；未配置 Key 时自动使用 **Mock 模式**。
+相关接口：
 
-### 常用 Provider 示例
+- `POST /api/coze/review`：上传合同并调用扣子工作流
+- `GET /api/coze/status`：仅返回是否已配置（不暴露密钥）
+- `/api/compare/analyze`、`/api/compliance/check`：产品比选 / 规范核查
 
-| Provider | LLM_BASE_URL | LLM_MODEL |
-|----------|--------------|-----------|
-| OpenAI | https://api.openai.com/v1 | gpt-4o-mini |
-| DeepSeek | https://api.deepseek.com/v1 | deepseek-chat |
-| Moonshot | https://api.moonshot.cn/v1 | moonshot-v1-8k |
+未配置密钥时自动使用演示结果，并标注「当前为演示结果」。若扣子工作流因飞书插件授权中断，页面会显示明确错误并支持重试。
 
 ## 项目结构
 
 ```
 src/
-├── app/                 # Next.js App Router
+├── app/                 # /, /compare, /compliance + API Routes
 ├── components/
-│   ├── layout/          # 布局组件
-│   ├── steps/           # 流程步骤页面
-│   ├── shared/          # 共享 UI 辅助
-│   └── ui/              # shadcn/ui 组件
-├── services/ai/         # AI 服务层
-│   ├── resumeAgent.ts         # 客户端 API 调用
-│   ├── resumeAgent.server.ts  # 服务端路由（Mock / LLM 切换）
-│   ├── resumeAgent.llm.ts     # 真实大模型调用
-│   └── resumeAgent.mock.ts    # Mock 数据
-├── app/api/             # Next.js API Routes（保护 API Key）
-│   ├── analyze/
-│   ├── optimize/
-│   └── follow-up/bullet/
-├── store/               # Zustand 状态管理
-└── types/               # TypeScript 类型定义
+│   ├── layout/          # AppShell
+│   ├── shared/          # 上传、Evidence 侧栏、Agent 步骤等
+│   └── ui/              # shadcn/ui
+├── data/demo/           # 软膜天花演示数据
+├── services/agents/     # Mock / Server Agent 封装
+├── store/               # Zustand 工作台状态
+└── types/               # 结构化领域模型
 ```
+
+## 设计原则
+
+- 所有 AI 判断必须可追溯（Evidence：文件 / 页码 / 原文 / 置信度）
+- AI 不确定 → `REVIEW`；缺资料 → `MISSING`（不等于 FAIL）
+- AI 结果必须经过人工确认
+- 阶段一 `SelectionResult` 自动作为阶段二输入
