@@ -77,11 +77,16 @@ export default function HomePage() {
           <p className="mt-2 text-sm leading-relaxed text-[var(--ink-muted)]">
             基于已确认的产品和项目规范，AI 自动生成检查清单并逐项进行合规核查。
           </p>
-          <Button asChild className="mt-5">
-            <Link href="/compliance">
-              进入合规审核 <ArrowRight className="h-4 w-4" />
-            </Link>
-          </Button>
+          <div className="mt-5 flex flex-wrap gap-2">
+            <Button asChild>
+              <Link href="/compliance">
+                进入合规审核 <ArrowRight className="h-4 w-4" />
+              </Link>
+            </Button>
+            <Button asChild variant="outline">
+              <Link href="/demo/compliance">打开测试预览页</Link>
+            </Button>
+          </div>
         </div>
       </section>
 
