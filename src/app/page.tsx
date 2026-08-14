@@ -62,11 +62,16 @@ export default function HomePage() {
           <p className="mt-2 text-sm leading-relaxed text-[var(--ink-muted)]">
             上传任意数量产品资料，按真实原文提取参数并归一化，完成六维评分与人工确认（不编造缺失信息）。
           </p>
-          <Button asChild className="mt-5">
-            <Link href="/compare">
-              开始产品比选 <ArrowRight className="h-4 w-4" />
-            </Link>
-          </Button>
+          <div className="mt-5 flex flex-wrap gap-2">
+            <Button asChild>
+              <Link href="/compare">
+                开始产品比选 <ArrowRight className="h-4 w-4" />
+              </Link>
+            </Button>
+            <Button asChild variant="outline">
+              <Link href="/demo/compare">打开比选测试页</Link>
+            </Button>
+          </div>
         </div>
 
         <div className="panel animate-fade-up p-6" style={{ animationDelay: "120ms" }}>
