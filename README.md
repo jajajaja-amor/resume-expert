@@ -17,10 +17,13 @@
 
 ```bash
 npm install
+pip3 install --user -r requirements-docs.txt   # 真实 PDF/DOCX/XLSX 解析（biaoshu-writer-pro）
 npm run dev
 ```
 
 打开 [http://localhost:3000](http://localhost:3000)
+
+> 文档解析使用 `scripts/parse_document.py`（源自 SkillHub `@user_509b3ac1/biaoshu-writer-pro`），经 `/api/documents/parse` 服务端提取文本后再做参数抽取。扫描版 PDF 无文字层时需 OCR 或粘贴原文。
 
 ## 页面
 

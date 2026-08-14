@@ -33,32 +33,71 @@ function isTextLike(file: File): boolean {
   );
 }
 
-async function readFileText(file: File): Promise<{ text: string; note?: string }> {
-  if (isTextLike(file)) {
-    const text = await file.text();
-    return { text };
+function isParseableDoc(file: File): boolean {
+  const name = file.name.toLowerCase();
+  return /\.(pdf|docx|xlsx|xls)$/i.test(name);
+}
+
+async function parseViaServer(file: File): Promise<{ text: string; note?: string; failed?: boolean }> {
+  const form = new FormData();
+  form.append("file", file, file.name);
+  const response = await fetch("/api/documents/parse", {
+    method: "POST",
+    body: form,
+  });
+  const data = (await response.json().catch(() => ({}))) as {
+    ok?: boolean;
+    text?: string;
+    warning?: string | null;
+    error?: string | null;
+    chars?: number;
+    engine?: string;
+  };
+
+  if (!response.ok || (!data.text?.trim() && data.error)) {
+    return {
+      text: "",
+      failed: true,
+      note:
+        data.error ||
+        data.warning ||
+        "服务端文档解析失败。可粘贴原文继续，系统不会编造参数。",
+    };
   }
 
-  // Best-effort decode for office/pdf binaries — may be empty; user can paste text.
-  try {
-    const buffer = await file.arrayBuffer();
-    const bytes = new Uint8Array(buffer.slice(0, Math.min(buffer.byteLength, 512_000)));
-    const decoded = new TextDecoder("utf-8", { fatal: false }).decode(bytes);
-    const printable = decoded.replace(/[^\x09\x0A\x0D\x20-\x7E\u4e00-\u9fff，。；：、（）【】￥]/g, " ");
-    const compact = printable.replace(/\s+/g, " ").trim();
-    if (compact.length >= 40) {
+  const notes = [
+    data.engine ? `已用真实文档解析引擎（${data.engine}）提取 ${data.chars ?? data.text?.length ?? 0} 字` : null,
+    data.warning || null,
+  ].filter(Boolean);
+
+  return {
+    text: data.text || "",
+    note: notes.join("；") || undefined,
+  };
+}
+
+async function readFileText(file: File): Promise<{ text: string; note?: string; failed?: boolean }> {
+  if (isTextLike(file)) {
+    const text = await file.text();
+    return { text, note: "已读取纯文本内容" };
+  }
+
+  if (isParseableDoc(file)) {
+    try {
+      return await parseViaServer(file);
+    } catch {
       return {
-        text: compact.slice(0, 20000),
-        note: "已尽力从二进制文件抽取可读文本；若参数缺失请改用 TXT 或粘贴原文。",
+        text: "",
+        failed: true,
+        note: "文档解析服务不可用。请粘贴原文，或稍后重试。",
       };
     }
-  } catch {
-    // ignore
   }
 
   return {
     text: "",
-    note: "未能自动读取文本。请在下方粘贴该产品资料原文，系统不会编造参数。",
+    failed: true,
+    note: "当前格式暂不支持自动解析。请上传 PDF/DOCX/XLSX/TXT，或粘贴原文。",
   };
 }
 
@@ -68,7 +107,7 @@ export function FileUpload({
   onRetry,
   category,
   acceptImages = true,
-  hint = "支持 TXT/CSV/PDF/Word/Excel/图片。同一「产品分组」的多份文件会合并为一个产品；不限制产品数量。",
+  hint = "支持 TXT/PDF/DOCX/XLSX 真实解析（biaoshu-writer-pro）。同一「产品分组」多文件合并为一个产品；数量不限。",
 }: {
   files: DocumentFile[];
   onChange: (files: DocumentFile[]) => void;
@@ -100,14 +139,14 @@ export function FileUpload({
           }
           const idx = files.length + next.length;
           const productLabel = `产品 ${idx + 1}`;
-          const { text, note } = await readFileText(file);
+          const { text, note, failed } = await readFileText(file);
           next.push({
             id: uid("doc"),
             name: file.name,
             type: file.type || "application/octet-stream",
             size: file.size,
             category,
-            parseStatus: text.trim() ? "done" : "pending",
+            parseStatus: failed && !text.trim() ? "failed" : text.trim() ? "done" : "pending",
             productLabel,
             supplierName: productLabel,
             textContent: text,
@@ -125,6 +164,17 @@ export function FileUpload({
 
   function patchFile(id: string, patch: Partial<DocumentFile>) {
     onChange(files.map((f) => (f.id === id ? { ...f, ...patch } : f)));
+  }
+
+  async function handleRetryParse(id: string) {
+    const target = files.find((f) => f.id === id);
+    if (!target) return;
+    onRetry?.(id);
+    // Without original File blob we can only ask user to re-upload or paste
+    patchFile(id, {
+      parseStatus: "pending",
+      errorMessage: "请重新选择文件上传，或在下方粘贴资料原文后继续。",
+    });
   }
 
   return (
@@ -147,7 +197,7 @@ export function FileUpload({
       >
         <FileUp className="mx-auto h-8 w-8 text-brand" />
         <p className="mt-3 text-sm font-medium">
-          {reading ? "正在读取文件内容…" : "点击上传或拖拽文件到此处"}
+          {reading ? "正在真实解析文档…" : "点击上传或拖拽文件到此处"}
         </p>
         <p className="mt-1 text-xs text-[var(--ink-muted)]">{hint}</p>
         <Button
@@ -192,10 +242,15 @@ export function FileUpload({
                 </div>
                 <div className="flex items-center gap-2">
                   <ParseStatusBadge status={file.parseStatus} />
-                  {file.parseStatus === "failed" && onRetry ? (
-                    <Button type="button" size="sm" variant="outline" onClick={() => onRetry(file.id)}>
+                  {file.parseStatus === "failed" ? (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => void handleRetryParse(file.id)}
+                    >
                       <RotateCcw className="h-3.5 w-3.5" />
-                      重试
+                      重试说明
                     </Button>
                   ) : null}
                   <Button
@@ -212,7 +267,7 @@ export function FileUpload({
 
               <label className="block text-sm">
                 <span className="mb-1 block text-[var(--ink-muted)]">
-                  产品分组（相同名称会合并为同一产品；不同名称=不同产品，数量不限）
+                  产品分组（相同名称合并为同一产品；不同名称=不同产品）
                 </span>
                 <input
                   className="h-9 w-full max-w-md rounded-md border border-[var(--line)] px-3"
@@ -229,7 +284,7 @@ export function FileUpload({
 
               <label className="block text-sm">
                 <span className="mb-1 block text-[var(--ink-muted)]">
-                  资料文本（用于结构化解析；PDF/扫描件若抽不到字请粘贴）
+                  资料文本（由真实解析引擎填充，可手工校对）
                 </span>
                 <textarea
                   className="min-h-28 w-full rounded-md border border-[var(--line)] px-3 py-2 font-mono text-xs"
@@ -241,13 +296,22 @@ export function FileUpload({
                       errorMessage: undefined,
                     })
                   }
-                  placeholder="粘贴包含公司名称、单价、幅宽、防火等级、认证、VOC、MOQ 等字段的原文…"
+                  placeholder="解析结果将显示在这里…"
                 />
               </label>
               {file.errorMessage ? (
-                <p className="text-xs text-amber-700">{file.errorMessage}</p>
+                <p
+                  className={cn(
+                    "text-xs",
+                    file.parseStatus === "failed" ? "text-red-700" : "text-amber-700"
+                  )}
+                >
+                  {file.errorMessage}
+                </p>
               ) : file.textContent?.trim() ? (
-                <p className="text-xs text-emerald-700">已载入文本，将仅基于该内容提取参数（不编造）。</p>
+                <p className="text-xs text-emerald-700">
+                  已载入文本，将仅基于该内容提取参数（不编造）。
+                </p>
               ) : (
                 <p className="text-xs text-amber-700">暂无文本，分析时该文件无法提取参数。</p>
               )}
