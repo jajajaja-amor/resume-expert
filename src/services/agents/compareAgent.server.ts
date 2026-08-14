@@ -1,28 +1,24 @@
 import { getAIConfig } from "@/lib/ai/config";
-import type { AgentStep, CompareAnalysisResult, DocumentFile } from "@/types/workspace";
-import { runCompareAnalysisMock } from "@/services/agents/compareAgent.mock";
+import type { AgentStep, CompareAnalysisResult } from "@/types/workspace";
+import {
+  runComparePipeline,
+  type AnalyzeDocumentInput,
+} from "@/services/compare/pipeline";
 
 /**
- * Server-side compare agent entry.
- * Currently returns structured Mock Agent output.
- * When LLM_API_KEY is configured, this is the swap point for real Document Parser /
- * Parameter Extractor / Scoring Agent orchestration (Coze / OpenAI / custom backend).
+ * Server-side compare agent entry used by API / tests.
  */
 export async function runCompareAnalysisServer(
-  docs: DocumentFile[],
+  docs: AnalyzeDocumentInput[],
   onStep?: (steps: AgentStep[]) => void
 ): Promise<{ result: CompareAnalysisResult; mode: "mock" | "llm" }> {
   const config = getAIConfig();
-
-  // Real LLM orchestration is reserved here. Without a dedicated product-compliance
-  // prompt pipeline, we keep deterministic Demo/Mock structured output so the
-  // end-to-end workspace remains demonstrable and evidence-traceable.
-  const result = await runCompareAnalysisMock(docs, onStep);
-  return {
-    result: {
-      ...result,
-      demoMode: config.mode === "mock" ? true : result.demoMode,
-    },
-    mode: config.mode,
-  };
+  const explicitDemo = docs.some(
+    (d) => (d as AnalyzeDocumentInput & { demoSource?: boolean }).demoSource
+  );
+  const result = await runComparePipeline(docs, {
+    onStep,
+    demoMode: explicitDemo,
+  });
+  return { result: { ...result, demoMode: explicitDemo }, mode: config.mode };
 }

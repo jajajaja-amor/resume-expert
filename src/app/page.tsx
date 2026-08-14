@@ -60,7 +60,7 @@ export default function HomePage() {
           </div>
           <h2 className="mt-4 font-display text-xl font-semibold">产品比选</h2>
           <p className="mt-2 text-sm leading-relaxed text-[var(--ink-muted)]">
-            上传多个供应商产品资料，AI 自动提取参数、统一单位、横向比较并生成六维评分。
+            上传任意数量产品资料，按真实原文提取参数并归一化，完成六维评分与人工确认（不编造缺失信息）。
           </p>
           <Button asChild className="mt-5">
             <Link href="/compare">

@@ -50,6 +50,10 @@ export interface DocumentFile {
   size: number;
   supplierId?: string;
   supplierName?: string;
+  /** User-assigned product group label; same label merges into one product */
+  productLabel?: string;
+  /** Extracted or pasted plain text used for parameter extraction */
+  textContent?: string;
   category: "product" | "specification" | "supplement";
   parseStatus: ParseStatus;
   errorMessage?: string;

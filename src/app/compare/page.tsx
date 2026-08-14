@@ -9,11 +9,11 @@ import { AgentSteps } from "@/components/shared/agent-steps";
 import { EvidenceSidebar, type EvidencePanelData } from "@/components/shared/evidence-sidebar";
 import { ComparisonBars, ScoreBar } from "@/components/shared/score-bar";
 import { getDemoProductDocuments, runCompareAnalysis } from "@/services/agents/compareAgent";
+import { buildSelectionFromCompare } from "@/services/compare/pipeline";
 import { useWorkspaceStore } from "@/store/workspace-store";
-import { buildDemoSelectionResult } from "@/data/demo/soft-membrane";
 import { selectionToCsv } from "@/lib/export-report";
 import type { Parameter, ProductScore } from "@/types/workspace";
-import { delay, downloadTextFile, uid } from "@/lib/utils";
+import { downloadTextFile } from "@/lib/utils";
 
 export default function ComparePage() {
   const productDocs = useWorkspaceStore((s) => s.productDocs);
@@ -37,13 +37,11 @@ export default function ComparePage() {
   const resetCompare = useWorkspaceStore((s) => s.resetCompare);
 
   const [analyzing, setAnalyzing] = useState(false);
+  const [analyzeError, setAnalyzeError] = useState<string | null>(null);
   const [evidence, setEvidence] = useState<EvidencePanelData | null>(null);
   const [markedErrors, setMarkedErrors] = useState<string[]>([]);
 
-  const suppliers = useMemo(() => {
-    if (!compareResult) return [];
-    return compareResult.suppliers;
-  }, [compareResult]);
+  const suppliers = useMemo(() => compareResult?.suppliers ?? [], [compareResult]);
 
   const paramKeys = useMemo(() => {
     if (!compareResult) return [];
@@ -52,48 +50,37 @@ export default function ComparePage() {
     return Array.from(map.entries()).map(([key, label]) => ({ key, label }));
   }, [compareResult]);
 
-  const selectedScore = editedScores?.find((s) => s.productId === selectedProductId) ?? null;
+  const selectedScore =
+    editedScores?.find((s) => s.productId === selectedProductId) ?? null;
 
-  async function simulateParse(docs = productDocs) {
-    for (const doc of docs) {
-      updateProductDoc(doc.id, { parseStatus: "parsing", errorMessage: undefined });
-      await delay(280);
-      // Demo: mark first failed if name contains fail, else done
-      if (/fail|损坏/i.test(doc.name)) {
-        updateProductDoc(doc.id, {
-          parseStatus: "failed",
-          errorMessage: "文件解析失败，请重新上传或尝试其他文件。",
-        });
-      } else {
-        updateProductDoc(doc.id, { parseStatus: "done" });
-      }
-    }
-  }
+  const rankedScores = useMemo(() => {
+    return [...(editedScores ?? [])].sort((a, b) => b.overall - a.overall);
+  }, [editedScores]);
 
-  async function handleLoadDemo() {
+  function handleLoadDemo() {
     const docs = getDemoProductDocuments();
     setProductDocs(docs);
-    await simulateParse(docs);
+    setAnalyzeError(null);
   }
 
-  async function handleRetry(id: string) {
-    updateProductDoc(id, { parseStatus: "parsing", errorMessage: undefined });
-    await delay(500);
-    updateProductDoc(id, { parseStatus: "done" });
+  function handleRetry(id: string) {
+    updateProductDoc(id, { parseStatus: "pending", errorMessage: undefined });
   }
 
   async function handleAnalyze() {
     if (analyzing) return;
-    if (productDocs.length === 0) {
-      await handleLoadDemo();
-    }
-    const docs = useWorkspaceStore.getState().productDocs;
-    const failed = docs.some((d) => d.parseStatus === "failed");
-    if (failed) return;
+    setAnalyzeError(null);
 
-    // Ensure parsed
-    if (docs.some((d) => d.parseStatus !== "done")) {
-      await simulateParse(docs);
+    const docs = useWorkspaceStore.getState().productDocs;
+    if (docs.length === 0) {
+      setAnalyzeError("请先上传产品资料，或点击「载入 Demo 资料」进行演示。");
+      return;
+    }
+    if (!docs.some((d) => d.textContent?.trim())) {
+      setAnalyzeError(
+        "上传文件中没有可读文本。请粘贴产品资料原文，或改用 TXT/CSV。系统不会编造参数。"
+      );
+      return;
     }
 
     setAnalyzing(true);
@@ -101,8 +88,12 @@ export default function ComparePage() {
     try {
       const result = await runCompareAnalysis(docs, setCompareSteps);
       setCompareResult(result);
-      setSelectedProductId(result.scores[0]?.productId ?? null);
+      const top = [...result.scores].sort((a, b) => b.overall - a.overall)[0];
+      setSelectedProductId(top?.productId ?? null);
       setComparePhase("results");
+    } catch (e) {
+      setAnalyzeError(e instanceof Error ? e.message : "分析失败，请重试");
+      setComparePhase("upload");
     } finally {
       setAnalyzing(false);
     }
@@ -118,18 +109,11 @@ export default function ComparePage() {
       confidence: param.confidence,
       extra: param.conflict ? (
         <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-          ⚠️ 参数冲突，需要人工确认。请对比以下两个来源后手工裁定，系统不会自动选择。
-          <ul className="mt-2 list-disc space-y-1 pl-5">
-            {param.conflict.values.map((v) => (
-              <li key={v.rawValue}>
-                {v.rawValue}（{v.evidence.sourceDocument}）
-              </li>
-            ))}
-          </ul>
+          ⚠️ 参数冲突，需要人工确认。请对比来源后手工裁定，系统不会自动选择。
         </div>
       ) : param.needsReview ? (
         <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-          ⚠️ 待确认 — AI 置信度较低或证据不足，请人工核对。
+          ⚠️ 待确认 — 资料未提供、置信度较低或单位待确认。系统未编造该值。
         </div>
       ) : null,
     });
@@ -146,7 +130,7 @@ export default function ComparePage() {
       confidence: dim.confidence,
       extra: (
         <div className="panel p-4 text-sm">
-          <div className="font-medium">评分理由</div>
+          <div className="font-medium">评分理由（仅基于已提取字段）</div>
           <ul className="mt-2 space-y-1">
             {dim.reasons.map((r) => (
               <li key={r.text}>
@@ -161,16 +145,12 @@ export default function ComparePage() {
 
   function handleConfirm() {
     if (!selectedScore || !compareResult) return;
-    const selection = buildDemoSelectionResult(selectedScore, {
-      id: uid("sel"),
+    const selection = buildSelectionFromCompare({
+      result: compareResult,
+      selected: selectedScore,
       projectName,
       humanNotes: reviewNotes,
-      pendingItems: [
-        ...compareResult.pendingItems,
-        ...markedErrors.map((e) => `已标记错误：${e}`),
-      ],
-      humanReviewStatus: reviewNotes || markedErrors.length ? "modified" : "accepted",
-      demoMode: compareResult.demoMode,
+      markedErrors,
     });
     confirmSelection(selection);
     setComparePhase("confirmed");
@@ -191,8 +171,10 @@ export default function ComparePage() {
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <h1 className="font-display text-3xl font-semibold">AI 产品比选</h1>
-            <p className="mt-2 max-w-2xl text-sm text-[var(--ink-muted)] md:text-base">
-              上传多个供应商产品资料，自动完成参数提取、归一化比较和六维评分。
+            <p className="mt-2 max-w-3xl text-sm text-[var(--ink-muted)] md:text-base">
+              上传资料 → 结构化提取（公司/产品/单价/数量/厚度/幅宽/材质/防火/认证/VOC/资质/海外经验/交期/MOQ）→
+              归一化（幅宽米、单价人民币、重量 kg/卷、中文）→ 六维评分 → 人工审核 → 合规审查。
+              产品数量不限；只根据资料原文分析，不编造。
             </p>
           </div>
           <Button variant="outline" size="sm" onClick={resetCompare}>
@@ -208,11 +190,11 @@ export default function ComparePage() {
             <div>
               <h2 className="font-display text-xl font-semibold">产品资料上传</h2>
               <p className="mt-1 text-sm text-[var(--ink-muted)]">
-                可一次上传多个供应商文件。演示模式也可一键载入示例资料。
+                上传几个产品就分析几个。可用「产品分组」区分；相同分组多文件会合并。
               </p>
             </div>
             <Button variant="outline" onClick={handleLoadDemo} disabled={analyzing}>
-              载入 Demo 资料（3 个供应商）
+              载入 Demo 资料（含原文）
             </Button>
           </div>
 
@@ -223,13 +205,19 @@ export default function ComparePage() {
             category="product"
           />
 
+          {analyzeError ? (
+            <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+              {analyzeError}
+            </div>
+          ) : null}
+
           <div className="flex flex-wrap gap-3">
-            <Button onClick={handleAnalyze} disabled={analyzing}>
+            <Button onClick={() => void handleAnalyze()} disabled={analyzing}>
               {analyzing ? "AI 正在分析…" : "开始 AI 产品比选"}
             </Button>
-            {productDocs.some((d) => d.parseStatus === "failed") ? (
-              <Button variant="outline" onClick={() => setProductDocs([])}>
-                重新上传
+            {productDocs.length > 0 ? (
+              <Button variant="outline" onClick={() => setProductDocs([])} disabled={analyzing}>
+                清空上传
               </Button>
             ) : null}
           </div>
@@ -244,9 +232,15 @@ export default function ComparePage() {
         comparePhase === "confirmed") ? (
         <>
           <section className="panel p-5 md:p-6">
-            <h2 className="font-display text-xl font-semibold">产品参数对比</h2>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h2 className="font-display text-xl font-semibold">产品参数对比</h2>
+              <span className="text-sm text-[var(--ink-muted)]">
+                共 {compareResult.products.length} 个产品
+                {compareResult.demoMode ? " · 演示资料" : " · 用户上传资料"}
+              </span>
+            </div>
             <p className="mt-1 text-sm text-[var(--ink-muted)]">
-              点击任意参数单元格可查看来源。冲突或低置信度项会提示待确认。
+              点击单元格查看来源。显示「资料中未提供」表示原文没有该字段，系统未编造。
             </p>
             <div className="mt-4 table-scroll">
               <table className="w-full min-w-[760px] text-left text-sm">
@@ -277,14 +271,8 @@ export default function ComparePage() {
                               onClick={() => openParamEvidence(param)}
                             >
                               {param.rawValue}
-                              {param.conflict ? (
-                                <span className="mt-1 block text-xs text-amber-700">
-                                  ⚠️ 参数冲突
-                                </span>
-                              ) : param.needsReview ? (
-                                <span className="mt-1 block text-xs text-amber-700">
-                                  ⚠️ 待确认
-                                </span>
+                              {param.needsReview ? (
+                                <span className="mt-1 block text-xs text-amber-700">⚠️ 待确认</span>
                               ) : null}
                             </button>
                           </td>
@@ -300,7 +288,7 @@ export default function ComparePage() {
           <section className="panel p-5 md:p-6">
             <h2 className="font-display text-xl font-semibold">参数归一化分析</h2>
             <p className="mt-1 text-sm text-[var(--ink-muted)]">
-              自动转换常见单位；无法确定单位时进入待确认，不自动猜测。
+              幅宽 → 米；单价 → 人民币；重量 → kg/卷；常见英文关键词 → 中文。无法确定时进入待确认。
             </p>
             <div className="mt-4 table-scroll">
               <table className="w-full min-w-[880px] text-left text-sm">
@@ -317,7 +305,8 @@ export default function ComparePage() {
                 </thead>
                 <tbody>
                   {compareResult.normalized.map((n) => {
-                    const supplier = suppliers.find((s) => s.id === n.supplierId)?.name ?? n.supplierId;
+                    const supplier =
+                      suppliers.find((s) => s.id === n.supplierId)?.name ?? n.supplierId;
                     return (
                       <tr key={n.id} className="border-b border-[var(--line)]">
                         <td className="px-3 py-2.5">{n.label}</td>
@@ -331,8 +320,6 @@ export default function ComparePage() {
                         <td className="px-3 py-2.5">
                           {n.status === "normalized" ? (
                             <span className="text-emerald-700">已归一化</span>
-                          ) : n.status === "conflict" ? (
-                            <span className="text-amber-700">⚠️ 参数冲突</span>
                           ) : (
                             <span className="text-amber-700">⚠️ 待确认</span>
                           )}
@@ -343,19 +330,10 @@ export default function ComparePage() {
                 </tbody>
               </table>
             </div>
-            <div className="mt-4 rounded-md border border-[var(--line)] bg-[var(--surface)] p-4 text-sm">
-              <div className="font-medium">幅宽归一化示例</div>
-              <p className="mt-2 text-[var(--ink-muted)]">
-                供应商 A：2000 mm → 供应商 B：2 m → 供应商 C：200 cm → 统一为 <strong>2 m</strong>
-              </p>
-            </div>
           </section>
 
           <section className="panel p-5 md:p-6">
             <h2 className="font-display text-xl font-semibold">产品横向比较</h2>
-            <p className="mt-1 text-sm text-[var(--ink-muted)]">
-              注意评价方向：价格越低越好；合规/企业/性能/供应越高越好；重量需结合项目需求。
-            </p>
             <div className="mt-5 grid gap-4 md:grid-cols-2">
               {compareResult.comparisons.map((metric) => (
                 <div key={metric.key} className="rounded-md border border-[var(--line)] p-4">
@@ -375,11 +353,11 @@ export default function ComparePage() {
           <section className="panel p-5 md:p-6">
             <h2 className="font-display text-xl font-semibold">六维综合评分</h2>
             <p className="mt-1 text-sm text-[var(--ink-muted)]">
-              01 价格 · 02 合规性 · 03 企业特性 · 04 产品性能 · 05 重量/运输 · 06 供应能力
+              01 价格 · 02 合规性 · 03 企业特性 · 04 产品性能 · 05 重量/运输 · 06 供应能力。默认选中最高分。
             </p>
 
             <div className="mt-5 space-y-6">
-              {(editedScores ?? []).map((score) => (
+              {rankedScores.map((score, idx) => (
                 <div
                   key={score.productId}
                   className={`rounded-lg border p-4 ${
@@ -391,7 +369,8 @@ export default function ComparePage() {
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div>
                       <div className="font-semibold">
-                        {score.supplierName} · {score.model}
+                        {idx === 0 ? "最高分 · " : ""}
+                        {score.supplierName} · {score.productName}
                       </div>
                       <div className="text-sm text-[var(--ink-muted)]">
                         综合评分 {score.overall} / 100
@@ -408,7 +387,10 @@ export default function ComparePage() {
 
                   <div className="mt-4 grid gap-4 md:grid-cols-2">
                     {score.dimensions.map((dim) => (
-                      <div key={dim.dimension} className="rounded-md bg-white p-3 border border-[var(--line)]">
+                      <div
+                        key={dim.dimension}
+                        className="rounded-md border border-[var(--line)] bg-white p-3"
+                      >
                         <div className="flex items-center justify-between gap-2">
                           <div className="font-medium">{dim.label}</div>
                           <div className="text-sm">
@@ -459,13 +441,11 @@ export default function ComparePage() {
           {comparePhase !== "confirmed" ? (
             <section className="panel space-y-4 border-brand/30 p-5 md:p-6">
               <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
-                AI 生成结果，仅供审核确认
+                AI 生成结果仅供审核确认。人工审核通过后，才可进入合规审核模块。
               </div>
-              <h2 className="font-display text-xl font-semibold">
-                AI 分析完成，请确认选型结果
-              </h2>
+              <h2 className="font-display text-xl font-semibold">人工审核兜底</h2>
               <p className="text-sm text-[var(--ink-muted)]">
-                可接受 AI 评分、修改评分/参数备注、标记错误，并查看来源后再确认。
+                请核对提取参数与六维评分，确认推荐产品后再进入下一步。
               </p>
 
               <div className="grid gap-4 md:grid-cols-2">
@@ -475,13 +455,13 @@ export default function ComparePage() {
                     value={reviewNotes}
                     onChange={(e) => setReviewNotes(e.target.value)}
                     className="min-h-28 w-full rounded-md border border-[var(--line)] px-3 py-2"
-                    placeholder="例如：认可供应商 A 的合规溢价；重量冲突需采购复核。"
+                    placeholder="例如：认可最高分方案的合规溢价；缺失 VOC 需供应商补件。"
                   />
                 </label>
                 <div className="text-sm">
-                  <div className="mb-2 text-[var(--ink-muted)]">标记错误项（点击添加）</div>
-                  <div className="flex flex-wrap gap-2">
-                    {(compareResult.pendingItems ?? []).map((item) => {
+                  <div className="mb-2 text-[var(--ink-muted)]">标记待确认项（点击添加）</div>
+                  <div className="flex max-h-40 flex-wrap gap-2 overflow-y-auto">
+                    {(compareResult.pendingItems ?? []).slice(0, 30).map((item) => {
                       const active = markedErrors.includes(item);
                       return (
                         <button
@@ -510,7 +490,7 @@ export default function ComparePage() {
               </div>
 
               <Button onClick={handleConfirm} disabled={!selectedScore}>
-                确认产品选型
+                人工审核通过并确认选型
               </Button>
             </section>
           ) : null}
@@ -537,36 +517,15 @@ export default function ComparePage() {
                 </div>
               </div>
 
-              <div className="grid gap-4 md:grid-cols-3">
-                <div className="rounded-md border border-[var(--line)] p-4 text-sm">
-                  <div className="font-medium">核心参数</div>
-                  <ul className="mt-2 space-y-1 text-[var(--ink-muted)]">
-                    {selectionResult.coreParameters.map((p) => (
-                      <li key={p.label}>
-                        {p.label}：{p.value}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-                <div className="rounded-md border border-[var(--line)] p-4 text-sm">
-                  <div className="font-medium">产品优势</div>
-                  <ul className="mt-2 space-y-1 text-[var(--ink-muted)]">
-                    {selectionResult.advantages.map((a) => (
-                      <li key={a}>• {a}</li>
-                    ))}
-                  </ul>
-                </div>
-                <div className="rounded-md border border-[var(--line)] p-4 text-sm">
-                  <div className="font-medium">潜在风险 / 待确认</div>
-                  <ul className="mt-2 space-y-1 text-[var(--ink-muted)]">
-                    {selectionResult.risks.map((r) => (
-                      <li key={r}>• {r}</li>
-                    ))}
-                    {selectionResult.pendingItems.map((p) => (
-                      <li key={p}>• {p}</li>
-                    ))}
-                  </ul>
-                </div>
+              <div className="rounded-md border border-[var(--line)] p-4 text-sm">
+                <div className="font-medium">核心参数（来自资料提取）</div>
+                <ul className="mt-2 grid gap-1 text-[var(--ink-muted)] md:grid-cols-2">
+                  {selectionResult.coreParameters.map((p) => (
+                    <li key={p.label}>
+                      {p.label}：{p.value}
+                    </li>
+                  ))}
+                </ul>
               </div>
 
               <div className="flex flex-wrap gap-3">
@@ -584,11 +543,7 @@ export default function ComparePage() {
         </>
       ) : null}
 
-      <EvidenceSidebar
-        open={!!evidence}
-        data={evidence}
-        onClose={() => setEvidence(null)}
-      />
+      <EvidenceSidebar open={!!evidence} data={evidence} onClose={() => setEvidence(null)} />
     </div>
   );
 }
