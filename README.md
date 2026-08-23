@@ -1,78 +1,31 @@
-# 简历专家
+# AI 产品经理工作台
 
-基于目标岗位 JD 的 AI 简历优化 Agent Web App。
+面向 AI 产品经理和业务人员的项目工作台。围绕一个项目建立背景、发起任务、查看工作流真实返回的业务文档，并把多个版本保留在项目中。
 
-## 技术栈
-
-- Next.js App Router
-- TypeScript
-- Tailwind CSS
-- shadcn/ui
-- Zustand
-- lucide-react
-
-## 快速开始
+## 启动
 
 ```bash
 npm install
 npm run dev
 ```
 
-打开 [http://localhost:3000](http://localhost:3000)
+打开 `http://localhost:3000`。首次打开会提供“零售 AI 客服 MVP”演示项目；该内容在页面中明确标注为演示数据，不是工作流运行结果。
+
+## 安全配置 Coze 工作流
+
+将以下变量放入部署平台的**保密环境变量**或本地未提交的 `.env.local` 文件。令牌仅在服务端 API 路由中读取，不会发送到浏览器、保存到项目或显示在页面中。
+
+```env
+COZE_WORKFLOW_ID=你的工作流ID
+COZE_PAT=你的个人访问令牌
+```
+
+重启服务后，页面顶部会显示“已连接”。点击“开始分析”时，项目背景和当前任务会被发送给 Coze 工作流；工作台仅展示工作流实际返回的正文。无有效正文、连接失败、超时、追问或风险提醒均会按实际状态展示，不会用演示内容替代。
 
 ## 使用流程
 
-1. 点击「使用示例数据」填充示例
-2. 点击「开始分析」触发 mock AI 分析
-3. 按左侧流程导航逐步查看各模块结果
-4. 在「经历追问」中填写回答并生成 bullet
-5. 在「导出结果」中复制最终简历
-
-## 大模型接入
-
-1. 复制环境变量模板：
-
-```bash
-cp .env.example .env.local
-```
-
-2. 填写 API Key 与模型配置（支持 OpenAI 兼容接口）：
-
-```env
-LLM_API_KEY=sk-xxx
-LLM_BASE_URL=https://api.openai.com/v1
-LLM_MODEL=gpt-4o-mini
-```
-
-3. 重启开发服务器。顶部导航会显示 **AI 模式**；未配置 Key 时自动使用 **Mock 模式**。
-
-### 常用 Provider 示例
-
-| Provider | LLM_BASE_URL | LLM_MODEL |
-|----------|--------------|-----------|
-| OpenAI | https://api.openai.com/v1 | gpt-4o-mini |
-| DeepSeek | https://api.deepseek.com/v1 | deepseek-chat |
-| Moonshot | https://api.moonshot.cn/v1 | moonshot-v1-8k |
-
-## 项目结构
-
-```
-src/
-├── app/                 # Next.js App Router
-├── components/
-│   ├── layout/          # 布局组件
-│   ├── steps/           # 流程步骤页面
-│   ├── shared/          # 共享 UI 辅助
-│   └── ui/              # shadcn/ui 组件
-├── services/ai/         # AI 服务层
-│   ├── resumeAgent.ts         # 客户端 API 调用
-│   ├── resumeAgent.server.ts  # 服务端路由（Mock / LLM 切换）
-│   ├── resumeAgent.llm.ts     # 真实大模型调用
-│   └── resumeAgent.mock.ts    # Mock 数据
-├── app/api/             # Next.js API Routes（保护 API Key）
-│   ├── analyze/
-│   ├── optimize/
-│   └── follow-up/bullet/
-├── store/               # Zustand 状态管理
-└── types/               # TypeScript 类型定义
-```
+1. 使用左侧“新建项目”填写业务对象、用户、范围、约束和待确认事项。
+2. 选择智能识别、需求分析、AI 方案设计、PRD 草稿或竞品分析，或者点击示例填充任务。
+3. 点击“开始分析”，在原页面查看运行状态与交付物。
+4. 使用“查看证据”“继续编辑”“保存到项目”“继续下一项”等操作持续推进。
+5. 项目、历史任务和已保存交付物保存在浏览器本地存储中；清除浏览器站点数据会将其移除。
