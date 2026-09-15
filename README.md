@@ -17,13 +17,32 @@
 
 ```bash
 npm install
-pip3 install --user -r requirements-docs.txt   # 真实 PDF/DOCX/XLSX 解析（biaoshu-writer-pro）
 npm run dev
 ```
 
 打开 [http://localhost:3000](http://localhost:3000)
 
-> 文档解析使用 `scripts/parse_document.py`（源自 SkillHub `@user_509b3ac1/biaoshu-writer-pro`），经 `/api/documents/parse` 服务端提取文本后再做参数抽取。扫描版 PDF 无文字层时需 OCR 或粘贴原文。
+> 文档解析由 `/api/documents/parse` 使用纯 JS 引擎（PDF/`unpdf`、DOCX/`mammoth`、XLSX/`xlsx`）提取文本，可部署到 Cloudflare。扫描版 PDF 无文字层时需 OCR 或粘贴原文。
+
+## 部署到 Cloudflare（Workers / Pages）
+
+Cloudflare 对 Next.js App Router（含 API）的官方路径是 **OpenNext → Cloudflare Workers**（已取代旧版 Pages `next-on-pages`）。Workers 可绑定自定义域名，效果与 Pages 站点一致。
+
+```bash
+cp .dev.vars.example .dev.vars   # 本地预览用密钥
+npm run preview                  # 本地 Workers 运行时预览
+npm run deploy                   # 构建并部署到 Cloudflare
+```
+
+Dashboard 连接 Git 时：构建命令用 `npx opennextjs-cloudflare build`，部署输出由 Wrangler / OpenNext 处理。请在 Cloudflare 项目 Secrets 中配置 `LLM_API_KEY`、`COZE_PAT`、`FEISHU_APP_ID`、`FEISHU_APP_SECRET` 等。
+
+CLI 部署需要：
+
+```bash
+export CLOUDFLARE_API_TOKEN=...   # 含 Workers Scripts Edit + Account Read
+export CLOUDFLARE_ACCOUNT_ID=...
+npm run deploy
+```
 
 ## 页面
 
@@ -46,7 +65,7 @@ npm run dev
 9. 在人工审核区处理 REVIEW/MISSING 后确认
 10. 生成 MAS 材料与最终报告，导出 Markdown / HTML
 
-页面会明确提示：**当前为演示模式，以下数据为模拟数据。**
+页面明确区分：上传资料走真实解析；未配置密钥时合规可用结构化演示结果。
 
 ## Demo 数据
 

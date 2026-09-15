@@ -1,0 +1,12 @@
+# Loaded by Wrangler for local preview (`npm run preview`)
+# Copy secrets from .env.local as needed. Do not commit real values.
+NEXTJS_ENV=development
+LLM_API_KEY=
+LLM_BASE_URL=https://api.deepseek.com/v1
+LLM_MODEL=deepseek-chat
+LLM_PROVIDER=deepseek
+COZE_PAT=
+COZE_WORKFLOW_ID=7673528525253820442
+COZE_API_BASE=https://api.coze.cn
+FEISHU_APP_ID=
+FEISHU_APP_SECRET=
