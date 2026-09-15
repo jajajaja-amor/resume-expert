@@ -1,5 +1,6 @@
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
+import type { ComplianceStatus, OverallComplianceState, RiskLevel } from "@/types/workspace";
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -18,39 +19,60 @@ export async function copyToClipboard(text: string): Promise<boolean> {
   }
 }
 
-export function formatResumeAsText(resume: import("@/types/resume").FinalResume): string {
-  const lines: string[] = [];
+export function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
 
-  lines.push(resume.personalInfo.name);
-  lines.push(
-    `${resume.personalInfo.email} | ${resume.personalInfo.phone} | ${resume.personalInfo.location}`
-  );
-  lines.push("");
-  lines.push(`求职意向：${resume.jobIntent}`);
-  lines.push("");
-  lines.push("职业摘要");
-  lines.push(resume.summary);
-  lines.push("");
-  lines.push("核心能力");
-  resume.coreSkills.forEach((s) => lines.push(`• ${s}`));
-  lines.push("");
-  lines.push("工作经历");
-  resume.workExperience.forEach((w) => {
-    lines.push(`${w.company} | ${w.role} | ${w.period}`);
-    w.bullets.forEach((b) => lines.push(`  • ${b}`));
-    lines.push("");
-  });
-  lines.push("项目经历");
-  resume.projectExperience.forEach((p) => {
-    lines.push(`${p.name} | ${p.role} | ${p.period}`);
-    p.bullets.forEach((b) => lines.push(`  • ${b}`));
-    lines.push("");
-  });
-  lines.push("技能工具");
-  lines.push(resume.skillsAndTools.join(" · "));
-  lines.push("");
-  lines.push("教育背景");
-  lines.push(`${resume.education.school} | ${resume.education.degree} | ${resume.education.period}`);
+export function formatDateTime(iso: string): string {
+  try {
+    return new Intl.DateTimeFormat("zh-CN", {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+    }).format(new Date(iso));
+  } catch {
+    return iso;
+  }
+}
 
-  return lines.join("\n");
+export function complianceStatusLabel(status: ComplianceStatus): string {
+  return status;
+}
+
+export function overallStateLabel(state: OverallComplianceState): string {
+  const map: Record<OverallComplianceState, string> = {
+    compliant: "合规",
+    at_risk: "存在风险",
+    pending_review: "待人工确认",
+    incomplete: "资料不完整",
+  };
+  return map[state];
+}
+
+export function riskLabel(risk: RiskLevel): string {
+  const map: Record<RiskLevel, string> = {
+    high: "高风险",
+    medium: "中风险",
+    low: "低风险",
+    none: "无风险",
+  };
+  return map[risk];
+}
+
+export function downloadTextFile(filename: string, content: string, mime: string) {
+  const blob = new Blob([content], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+export function uid(prefix = "id"): string {
+  return `${prefix}-${Math.random().toString(36).slice(2, 10)}`;
 }
