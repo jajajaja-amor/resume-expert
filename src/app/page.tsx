@@ -68,9 +68,6 @@ export default function HomePage() {
                 开始产品比选 <ArrowRight className="h-4 w-4" />
               </Link>
             </Button>
-            <Button asChild variant="outline">
-              <Link href="/demo/compare">打开比选测试页</Link>
-            </Button>
           </div>
         </div>
 
@@ -80,16 +77,13 @@ export default function HomePage() {
           </div>
           <h2 className="mt-4 font-display text-xl font-semibold">合规审核</h2>
           <p className="mt-2 text-sm leading-relaxed text-[var(--ink-muted)]">
-            基于已确认的产品和项目规范，AI 自动生成检查清单并逐项进行合规核查。
+            基于已确认的产品和项目规范，调用扣子工作流生成审查意见、法律/企业核验与飞书报告。
           </p>
           <div className="mt-5 flex flex-wrap gap-2">
             <Button asChild>
               <Link href="/compliance">
                 进入合规审核 <ArrowRight className="h-4 w-4" />
               </Link>
-            </Button>
-            <Button asChild variant="outline">
-              <Link href="/demo/compliance">打开测试预览页</Link>
             </Button>
           </div>
         </div>

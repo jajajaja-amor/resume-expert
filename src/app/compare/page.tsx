@@ -73,7 +73,7 @@ export default function ComparePage() {
 
     const docs = useWorkspaceStore.getState().productDocs;
     if (docs.length === 0) {
-      setAnalyzeError("请先上传产品资料，或点击「载入 Demo 资料」进行演示。");
+      setAnalyzeError("请先上传产品资料，或点击「载入示例资料」跑通真实解析。");
       return;
     }
     if (!docs.some((d) => d.textContent?.trim())) {
@@ -194,7 +194,7 @@ export default function ComparePage() {
               </p>
             </div>
             <Button variant="outline" onClick={handleLoadDemo} disabled={analyzing}>
-              载入 Demo 资料（含原文）
+              载入示例资料（走真实解析）
             </Button>
           </div>
 

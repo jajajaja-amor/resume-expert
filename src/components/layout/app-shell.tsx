@@ -65,7 +65,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               AI Agent 工作流 · 已就绪
             </div>
             <div className="text-[11px] text-[var(--ink-muted)]">
-              {aiMode === "llm" ? "AI 模式" : "演示模式"}
+              {aiMode === "llm" ? "LLM 增强抽取" : "规则解析引擎"}
               {selectionResult ? " · 已有选型结果" : ""}
             </div>
           </div>
