@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
-import { mkdtemp, writeFile, rm } from "fs/promises";
-import { tmpdir } from "os";
 import path from "path";
-import { spawn } from "child_process";
+import { extractText as extractPdfText } from "unpdf";
+import mammoth from "mammoth";
+import * as XLSX from "xlsx";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -10,52 +10,62 @@ export const maxDuration = 120;
 const MAX_SIZE = 20 * 1024 * 1024;
 const ALLOWED_EXT = new Set([".txt", ".pdf", ".docx", ".xlsx", ".xls"]);
 
-function runPythonParse(filePath: string): Promise<{
-  ok: boolean;
-  text: string;
-  warning?: string | null;
-  error?: string | null;
-  chars?: number;
-}> {
-  const script = path.join(process.cwd(), "scripts", "parse_document.py");
-  return new Promise((resolve, reject) => {
-    const child = spawn("python3", [script, "--json", filePath], {
-      env: { ...process.env, PYTHONIOENCODING: "utf-8" },
-    });
-    let stdout = "";
-    let stderr = "";
-    child.stdout.on("data", (d) => {
-      stdout += d.toString("utf8");
-    });
-    child.stderr.on("data", (d) => {
-      stderr += d.toString("utf8");
-    });
-    child.on("error", reject);
-    child.on("close", () => {
-      try {
-        const parsed = JSON.parse(stdout.trim() || "{}") as {
-          ok?: boolean;
-          text?: string;
-          warning?: string | null;
-          error?: string | null;
-          chars?: number;
-        };
-        resolve({
-          ok: Boolean(parsed.ok),
-          text: parsed.text || "",
-          warning: parsed.warning,
-          error: parsed.error || (parsed.ok ? null : stderr || "解析失败"),
-          chars: parsed.chars,
-        });
-      } catch {
-        reject(new Error(stderr || stdout || "解析脚本返回无效 JSON"));
-      }
-    });
-  });
+async function parseBuffer(
+  ext: string,
+  bytes: Uint8Array,
+  fileName: string
+): Promise<{ ok: boolean; text: string; warning?: string | null; error?: string | null }> {
+  if (ext === ".txt") {
+    const text = new TextDecoder("utf-8").decode(bytes);
+    return { ok: Boolean(text.trim()), text, error: text.trim() ? null : "空文本文件" };
+  }
+
+  if (ext === ".pdf") {
+    const { text } = await extractPdfText(bytes, { mergePages: true });
+    const joined = Array.isArray(text) ? text.join("\n") : String(text || "");
+    if (!joined.trim()) {
+      return {
+        ok: false,
+        text: "",
+        warning: "PDF 未提取到可检索文本（可能是扫描件），请粘贴原文或提供带文字层的 PDF。",
+        error: "未能从 PDF 提取文字",
+      };
+    }
+    return { ok: true, text: joined };
+  }
+
+  if (ext === ".docx") {
+    const result = await mammoth.extractRawText({ buffer: Buffer.from(bytes) });
+    const text = result.value || "";
+    return {
+      ok: Boolean(text.trim()),
+      text,
+      warning: result.messages?.length ? result.messages.map((m) => m.message).join("; ") : null,
+      error: text.trim() ? null : "未能从 DOCX 提取文字",
+    };
+  }
+
+  if (ext === ".xlsx" || ext === ".xls") {
+    const workbook = XLSX.read(bytes, { type: "array" });
+    const chunks: string[] = [];
+    for (const sheetName of workbook.SheetNames) {
+      const sheet = workbook.Sheets[sheetName];
+      if (!sheet) continue;
+      chunks.push(`# ${sheetName}`);
+      chunks.push(XLSX.utils.sheet_to_csv(sheet));
+    }
+    const text = chunks.join("\n").trim();
+    return {
+      ok: Boolean(text),
+      text,
+      error: text ? null : `未能从表格 ${fileName} 提取文字`,
+    };
+  }
+
+  return { ok: false, text: "", error: `不支持的格式 ${ext}` };
 }
 
 export async function POST(request: Request) {
-  let tempDir: string | null = null;
   try {
     const form = await request.formData();
     const file = form.get("file");
@@ -74,13 +84,9 @@ export async function POST(request: Request) {
       );
     }
 
-    tempDir = await mkdtemp(path.join(tmpdir(), "speclens-parse-"));
-    const safeName = `${Date.now()}${ext}`;
-    const filePath = path.join(tempDir, safeName);
-    const bytes = Buffer.from(await file.arrayBuffer());
-    await writeFile(filePath, bytes);
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const result = await parseBuffer(ext, bytes, file.name);
 
-    const result = await runPythonParse(filePath);
     if (!result.ok && !result.text.trim()) {
       return NextResponse.json(
         {
@@ -88,7 +94,7 @@ export async function POST(request: Request) {
           text: "",
           warning: result.warning,
           error: result.error || "未能从文件提取文字",
-          engine: "biaoshu-writer-pro/parse_bid_files",
+          engine: "speclens-js-parser",
         },
         { status: 422 }
       );
@@ -99,16 +105,12 @@ export async function POST(request: Request) {
       text: result.text,
       warning: result.warning,
       error: null,
-      chars: result.chars ?? result.text.length,
-      engine: "biaoshu-writer-pro/parse_bid_files",
+      chars: result.text.length,
+      engine: "speclens-js-parser",
       fileName: file.name,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "文档解析失败";
     return NextResponse.json({ ok: false, error: message }, { status: 500 });
-  } finally {
-    if (tempDir) {
-      await rm(tempDir, { recursive: true, force: true }).catch(() => undefined);
-    }
   }
 }
